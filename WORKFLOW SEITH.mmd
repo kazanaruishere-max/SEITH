@@ -1,0 +1,223 @@
+graph TD
+    %% Styling
+    classDef level0 fill:#ffebd6,stroke:#ff9233,stroke-width:2px,color:#000;
+    classDef level1 fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000;
+    classDef level2 fill:#fffde7,stroke:#fbc02d,stroke-width:2px,color:#000;
+    classDef level3 fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000;
+    classDef block fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#000,stroke-dasharray: 5 5;
+    classDef execute fill:#ffebee,stroke:#d32f2f,stroke-width:2px,color:#000;
+
+    %% =========================================================================
+    %% LEVEL 0: MASTER BROKER SETTING & DATA NORMALIZATION (INFRASTRUKTUR UTAMA)
+    %% =========================================================================
+    subgraph LEVEL_0 ["LEVEL 0: CORE ENVIRONMENT & INFRASTRUCTURE (Exness)"]
+        A[Data Feed Raw: XAUUSDm Exness] --> B{Audit Jam Server Broker}:::level0
+        
+        %% Jam Hantu Proteksi
+        B -->|Broker_Time == 20:45| B1["SESSION_BREAK_WARNING = TRUE"]:::level0
+        B1 --> B2{Apakah Ada Posisi Sinyal Tier 2 yang Aktif?}:::level0
+        B2 -->|Yes| B3["Fungsi FORCE CLOSE NOW Akibat Resiko Spread Lock Rollover"]:::execute
+        B2 -->|No| C
+        
+        %% Normalisasi Nilai
+        B -->|Waktu Perdagangan Normal| C["Normalisasi Skala Desimal Emas Digits 3 Multiplier = 0.010"]:::level0
+    end
+
+    %% =========================================================================
+    %% LEVEL 3: THE GLOBAL EVENT LOOP & ADAPTIVE INTELLIGENCE CONTROLLER
+    %% =========================================================================
+    subgraph LEVEL_3_CORE ["LEVEL 3: MASTER CONTROL PIPELINE & EVEN LOOP INTERRUPT"]
+        C --> D["AI Global Event Loop Active (Setiap Tick Lilin Chart M1/M15)"]:::level3
+        D --> E["Inisialisasi Variabel Adaptasi: Baca Counter 'skip_strike_count' dari SQLite"]:::level3
+        E --> F["Eksekusi Modul 1: Dual-Parallel Async Calendar Scraper"]:::level2
+    end
+
+    %% =========================================================================
+    %% LEVEL 2: HIGH-IMPACT NEWS ANOMALY REGIME DETECTOR & SNIPER PIPELINE
+    %% =========================================================================
+    subgraph LEVEL_2_NEWS ["LEVEL 2: NEWS ANOMALY SNIPER ENGINE"]
+        F --> G{"Apakah Ada Berita Kategori 'Red Folder' USD dalam Rentang T-Minus 30 s.d 60 Menit?"}:::level2
+        
+        %% Jalur Aktivasi Mode Berita
+        G -->|Yes| H["Ubah Parameter Master: REGIME_STATUS = NEWS_ANOMALY_MODE"]:::level2
+        H --> H1["MATIKAN TOTAL SELURUH ENGINE STRUKTUR TEKNIKAL LEVEL 1"]:::block
+        H1 --> H2["Ubah Dashboard Visual Menjadi Kuning: PRE-NEWS COMPRESSION STAGE"]:::level2
+        
+        %% Detik Rilis & Extraction
+        H2 --> H3["Memasuki T-Minus 1 Menit: Aktifkan Async Fast Polling Berkecepatan Milidetik"]:::level2
+        H3 --> H4["Kirim Async Request Simultan ke Source Alpha (ForexFactory) & Source Beta (Investing.com)"]:::level2
+        H4 --> H5{Salah Satu Source Berhasil Mengembalikan Data Aktual Tercepat?}:::level2
+        H5 -->|No / HTTP Timeout 502/504| H3
+        
+        %% Pemrosesan Fundamental & Revisi Data
+        H5 -->|Yes| H6["Ekstrak Data: Actual, Forecast, Original Previous, dan Revised Previous"]:::level2
+        H6 --> H7["Jalankan Modul Data Revision Handler: Hitung Selisih Manipulasi Angka Bulan Lalu"]:::level2
+        H7 --> H8["Hitung Skor Bersih: Net_Dev = (Actual - Forecast) + (Revised_Previous - Original_Previous)"]:::level2
+        H8 --> I{"Evaluasi Kekuatan Parameter Amplitudo Net_Dev"}:::level2
+    end
+
+    %% =========================================================================
+    %% LEVEL 1: MARKET STRUCTURE REGIME NAVIGATION PIPELINE (KONDISI PASAR TENANG)
+    %% =========================================================================
+    subgraph LEVEL_1_STRUCT ["LEVEL 1: MARKET STRUCTURE NAVIGATION ENGINE"]
+        G -->|No| J["Ubah Parameter Master: REGIME_STATUS = NORMAL_REGULER_MODE"]:::level1
+        
+        %% Bayesian Gatekeeper FILTER 1
+        J --> J1["Panggil Kalkulator Probabilitas Teorema Bayesian Timeframe M15"]:::level1
+        J1 --> J2["Hitung Nilai Posterior Probability P(A|B) Berdasarkan Distribusi Sentimen Oanda"]:::level1
+        J2 --> J3{"Apakah Nilai Probabilitas P(A|B) >= 60%?"}:::level1
+        
+        %% Kasus Sinyal Gagal Bayesian
+        J3 -->|No: Kondisi Market Acak / Retail Noise| J4["ZONA DILARANG TRADING: Blokir Aliran Sinyal Teknikal"]:::block
+        J4 --> K["Kirim Status Kegagalan Sinyal ke Modul Evaluasi Risiko"]:::level3
+        
+        %% Kasus Sinyal Lolos Bayesian
+        J3 -->|Yes: Sinyal Terbuka Tersegmentasi| J5{"Berapa Nilai Pasti Probabilitas Bayesian?"}:::level1
+        J5 -->|"60% s/d 74%"| J6["Klasifikasikan Sinyal: Sinyal TIER 2 Tactical Scalp Active"]:::level1
+        J6 --> J6_Detail["Target RR Pendek Pendekatan 1:1.0 s.d 1:1.2 | SL Mekanis di Garis FRAMA"]:::level1
+        J5 -->|">= 75%"| J7["Klasifikasikan Sinyal: Sinyal TIER 1 Institutional Ride Active"]:::level1
+        J7 --> J7_Detail["Target RR Lebar Pendekatan 1:2.0 s.d 1:2.5 | SL Longgar di Outer Liquidity Pool"]:::level1
+        
+        %% Pipa CVaR Risk Engine FILTER 2
+        J6_Detail & J7_Detail --> L["Salurkan Sinyal ke Engine Risiko CVaR (Conditional Value at Risk) TF H1-H4"]:::level1
+        L --> L1{"Kalkulasi Real-Time Price Velocity Per Detik"}:::level1
+        L1 -->|">= 250 Points Per Detik"| L2["DITEKSI HIGH TAIL RISK: Potong Ukuran Lot Lot-Sizing Sebesar 50% s.d 75%"]:::execute
+        L1 -->|"< 150 Points Per Detik"| L3["LIKUIDITAS NORMAL: Pertahankan Penggunaan 100% Lot Standar"]:::level1
+        
+        %% Market Compass Regime Switching FILTER 3
+        L2 & L3 --> M["Panggil Indikator GVZ (CBOE Gold Volatility Index) Z-Score Calculator TF H1"]:::level1
+        M --> M1["Hitung Nilai Rumus: (GVZ_Current - Rata2_GVZ_20) / Standar_Deviasi_GVZ_20"]:::level1
+        M1 --> M2{Evaluasi Nilai Akhir GVZ Z-Score}:::level1
+        
+        %% Sub-Regime High Vol (FRAMA)
+        M2 -->|"> +1.0"| N["REZIM VOLATILITAS TINGGI: Aktifkan Algoritma FRAMA Trend Rider M15"]:::compass
+        N --> N1["Hitung Nilai Jarak Deviasi Z-Score Lilin Terhadap Garis Elastis FRAMA M15"]:::compass
+        N1 --> N2{"Apakah Nilai Mutlak Z_FRAMA <= 0.5?"}:::compass
+        N2 -->|No: Kondisi Harga Overextended| N3["FOMO BLOCK: Kunci Sinyal Searah Karena Rawan Pucuk"]:::block
+        N3 --> K
+        N2 -->|Yes: Koreksi/Pullback Valid Teruji| P["PINTU GERBANG STRUKTUR PASAR RESMI TERBUKA"]:::level1
+        
+        %% Sub-Regime Low Vol (AMT)
+        M2 -->|"<= +1.0"| O["REZIM VOLATILITAS RENDAH: Aktifkan Otak AMT Volume Profile M15/H1"]:::compass
+        O --> O1{Cek Posisi Koordinat Running Price Terhadap Peta Lelang}:::compass
+        O1 -->|Di Dalam Area POC +-5 Pips| O2["ZONA MAGNET POC: Blokir Total Sinyal Akibat Resiko Sideways/Choppy"]:::block
+        O2 --> K
+        O1 -->|Di Luar Area POC Menuju Batas VAH / VAL| O3["Hitung Nilai Penyimpangan Garis Session VWAP Deviation Bands M15"]:::compass
+        O3 --> O4{"Apakah Koordinat Harga Melebihi Band +2.5 Atau Kurang Dari Band -2.5?"}:::compass
+        O4 -->|Yes: Overextended/Jenuh Lelang| O5["MEAN REVERSION BLOCK: Kunci Segala Jenis Sinyal Searah"]:::block
+        O5 --> K
+        O4 -->|No: Area Adil Pembelian Diskon / Penjualan Premium| P
+        
+        %% Institutional Tracker FILTER 4
+        P --> Q["Kompilasi Data Master Indeks Berbobot: Orderflow Score (OFS) M15"]:::tracker
+        Q --> Q1["Hitung Sub-Komponen: S_Delta M15 + S_CVD M15 Divergence + S_DOM M15 Heatmap Z-Score"]:::tracker
+        Q1 --> Q2["Kalkulasikan Formula Total: OFS = S_Delta + S_CVD + S_DOM"]:::tracker
+        Q2 --> Q3{Evaluasi Total Skor Hasil Kompilasi Indeks OFS}:::tracker
+        Q3 -->|"-1, 0, atau +1"| Q4["RETAIL NOISE DETECTED: Blokir Sinyal Otomatis Karena Kekurangan Agresor Kakap"]:::block
+        Q4 --> K
+        Q3 -->|"Nilai Valid: OFS >= +2 atau OFS <= -2"| R["SINYAL STRUKTUR STRATEGIS DINYATAKAN VALID & COLOFUL"]:::tracker
+    end
+
+    %% =========================================================================
+    %% LEVEL 3: THE HEART OF AI - ADAPTATION SYSTEM & THRESHOLD RELAXATION ENGINE
+    %% =========================================================================
+    subgraph LEVEL_3_BRAIN ["LEVEL 3 ENGINE: THE STATISTICAL BRAIN & ANTI-PARALYSIS ADAPTATION"]
+        %% Jalur Lolos Evaluasi News
+        I -->|"Deviasi Ekstrem Valid (|Net_Dev| >= 2.0)"| S["SINYAL PIPELINE FUNDAMENTAL DINYATAKAN VALID"]:::level3
+        
+        %% Jalur Gagal Evaluasi News
+        I -->|"Deviasi Tipis / Informasi Blur (|Net_Dev| < 2.0)"| T["NEWS AMBIGUOUS: Sinyal Fundamental Rawan Whipsaw Dua Arah"]:::block
+        T --> K
+        
+        %% INTEGRASI KONTROL UTAMA ADAPTASI ANTI-PENAKUT
+        K --> U{"Query Database SQLite: Berapa Kali Berturut-turut Sistem Mengalami Skip / Gagal Sinyal?"}:::level3
+        
+        %% Kondisi Adaptasi Pasif (Masih Aman)
+        U -->|"< 3 Kali Berturut-turut"| U1["KEPUTUSAN STATIK AMAN: Izinkan Sistem Skip / Mogok Entry Demi Jaga Ekuitas"]:::block
+        U1 --> Loop_End[Siklus Loop Selesai - Standby Kembali Ke Titik Awal Loop]:::level3
+        
+        %% Kondisi Adaptasi Aktif (Penyembuhan Penakut Kronis)
+        U -->|"> = 3 Kali Berturut-turut"| U2["KONTROL ADAPTASI KRISIS AKTIF: Aktifkan Mode Threshold Relaxation!"]:::level3
+        U2 --> U3["Modifikasi Parameter Kognitif: Turunkan Jarak Penempatan Pending Order & Kurangi Toleransi Filter Spread 15%"]:::level3
+        U3 --> U4["Modifikasi Parameter Level 1: Longgarkan Kondisi Filter OFS Dari Minimal 2 Menjadi Cukup 1"]:::level3
+        U4 --> V["PAKSALAN SINYAL UNTUK MASUK KE JALUR EKSEKUSI (KEMBALIKAN SIFAT AGRESIF SISTEM)"]:::level3
+        
+        %% Penggabungan Sinyal Lolos Ke Engine Statistik Utama
+        R & S & V --> W["AI Membuka Pipa Data Konektor Database Lokal SQLite"]:::level3
+        W --> W1["Tarik Data Histori Trading 1-2 Bulan Terakhir Berdasarkan Parameter Jenis Berita / Setup"]:::level3
+        W2["Kalkulasikan Pemodelan Statistik Rigit:<br>1. Batas Rata-rata Volatility Spike Historis<br>2. Nilai Rata-rata Slippage Points Broker<br>3. Batas Maksimal Pelebaran Spread Exness"]:::level3
+        W1 --> W2
+        W2 --> W3["Sintesis Akhir Koordinat Presisi: Tentukan Titik Harga Entry, Target Take Profit, dan Jarak Stop Loss Jujur"]:::level3
+    end
+
+    %% =========================================================================
+    %% TELEGRAM BOT DISPATCH ENGINE (SISTEM SINYAL & GENERASI GRAFIK)
+    %% =========================================================================
+    subgraph TELEGRAM_ENGINE ["LEVEL 3 EXTENSION: TELEGRAM SIGNAL DISPATCHER"]
+        W3 --> TG_1["Tarik Data OHLCV 30 Lilin Terakhir via MT5 API Terminal"]:::level3
+        TG_1 --> TG_2["Render Snapshot Grafik Candlestick Matplotlib / Mplfinance Lokal"]:::level3
+        TG_2 --> TG_3["Plot Target Garis Koordinat: Titik Entry, SL, dan TP di Atas Grafik"]:::level3
+        TG_3 --> TG_4["Rakit Teks Pesan Sinyal Kuantitatif: Data Net_Dev, Skor OFS, Level Volume, Akurasi Bayesian"]:::level3
+        TG_4 --> TG_5["Eksekusi Async POST Request via Python Telegram Bot API: Kirim Teks + Gambar Chart"]:::execute
+    end
+
+    %% =========================================================================
+    %% LEVEL 1 - LEVEL 4 INTERACTION: THE ULTRA-MICRO TRIGGER PELATUK EKSEKUSI
+    %% =========================================================================
+    subgraph LEVEL_1_LEVEL_4_EXECUTION ["LEVEL 1 s.d 4: THE ULTRA-MICRO TRIGGER & MT5 API INTERACTION"]
+        TG_5 --> X{"Tentukan Karakter Peluru Jenis Perintah Eksekusi"}:::level3
+        
+        %% Skenario Limit Order (Sniper Sumbu)
+        X -->|Kondisi Harga Overextended / Antisipasi Sapuan Sumbu Berlawanan| Y["SIAPKAN PELATUK: PERINTAH PENDING LIMIT ORDER"]:::execute
+        Y --> Y1["Kirim Perintah ke MT5 API: Pasang BUY_LIMIT atau SELL_LIMIT di Outer Liquidity Pool + SPREAD_BUFFER"]:::execute
+        Y1 --> Y2["Harga Melakukan Lonjakan Kilat Memakan SL Ritel -> Antrean Limit Terjemput Tepat di Ujung Sumbu Terluar"]:::execute
+        
+        %% Skenario Stop Order (Momemtum Rider)
+        X -->|Kondisi Harga Kompresi Sempit / Konfirmasi Meledak Lurus Satu Arah| Z["SIAPKAN PELATUK: PERINTAH PENDING STOP ORDER"]:::execute
+        Z --> Z1["Kirim Perintah ke MT5 API: Pasang BUY_STOP atau SELL_STOP Beberapa Pips di Luar Range Konsolidasi Lilin M1"]:::execute
+        Z1 --> Z2["Harga Menjebol Batas Pertahanan -> Stop Order Terpicu Secara Paksa Ikut Terbang atau Terjun Bersama Arus Whale"]:::execute
+        
+        %% Skenario Instant Entry Sinyal Manual (Khusus Jalur Alternatif Abu-abu)
+        X -->|Kondisi News Abu-abu Dengan Trigger Rejection Konfluen| AA["SIAPKAN PELATUK: ALARM SINYAL MANUAL RUNNING DASHBOARD"]:::execute
+        AA --> AA1["Monitor Struktur Anatomi Candlestick & Konflusi Buku Order DOM Timeframe Ultra-Micro M1/M5"]:::trigger
+        AA1 --> AA2{"Hitung Nilai Real Body Ratio & Velocity Aliran Tik Pasar"}:::trigger
+        AA2 -->|"Ratio < 0.25 & Velocity >= 200 Points Per Detik"| AA3["REJEKSI INSTITUSIONAL VALID: Jalankan Perintah Manual Instant Entry Sekarang!"]:::trigger
+        AA2 -->|"Ratio < 0.25 & Velocity < 50 Points Per Detik"| AA4["SUMBU KOSONG TANPA VOLUM: Blokir Total - Pergerakan Kekurangan Momentum Makro"]:::block
+        AA4 --> Loop_End
+    end
+
+    %% =========================================================================
+    %% LEVEL 3: CLOSED-LOOP SELF LEARNING SYSTEM (EVALUASI & KALIBRASI AUTOMATIS)
+    %% =========================================================================
+    subgraph LEVEL_3_LEARNING ["LEVEL 3: CLOSED-LOOP SELF-LEARNING ENGINE (PASCA-TRADE)"]
+        Y2 & Z2 & AA3 --> AB["Posisi Transaksi Riil Berjalan di Server Exness Hingga Selesai (Hit TP atau Hit SL)"]:::execute
+        
+        %% Fungsi Auto-Kill Proteksi Pending Order Sisa
+        AB --> AC{"Monitor Waktu Server Pasca-News: Apakah Waktu Sudah Menyentuh T-Plus 3 Menit?"}:::execute
+        AC -->|Yes| AC1["Jalankan Fungsi Proteksi Auto-Kill: Panggil Perintah MT5 API OrderDeleteAllPending()"]:::execute
+        AC1 --> AC2["Bersihkan Seluruh Sisa Antrean Pending Order - Amankan Akun Cent dari Resiko Pembalikan Arah Hantu Sesi NY"]:::execute
+        AC -->|No| AB
+        
+        %% Pengumpulan Data Hasil Selesai
+        AC2 & AB --> AD["Transaksi Selesai Total -> Tarik Data Laporan Riil Pasca-Perdagangan dari API Broker"]:::level3
+        AD --> AD1["Ekstrak Parameter Hasil: Win/Loss Status, Slippage Points Aktual, Ukuran Spread Riil, dan Profit/Loss Cent"]:::level3
+        
+        %% Proses Menulis Kembali Ke Database & Self-Learning
+        AD1 --> AE["Tulis Baris Baru Informasi Hasil Eksekusi ke Dalam Database Lokal SQLite"]:::database
+        AE --> AF["JALANKAN PROSES REKALIBRASI KOGNITIF MANDIRI SECARA OTOMATIS:"]:::level3
+        AF --> AF1["1. Optimasi Formula Jarak Spacing Buffer Baru Berdasarkan Ukuran Slippage Riil yang Terjadi"]:::level3
+        AF --> AF2["2. Reset Angka Counter 'skip_strike_count' Kembali Menjadi Nol (Sistem Sembuh dari Sifat Penakut)"]:::level3
+        AF --> AF3["3. Perbarui Peta Batas Probabilitas Menang Statis untuk Digunakan Sebagai Dasar Acuan Loop Berikutnya"]:::level3
+        
+        %% Mengirimkan Laporan Hasil Akhir Trade Ke Telegram
+        AF3 --> TG_REPT["Kirim Notifikasi Laporan Akhir Hasil Perdagangan Ke Telegram Bot (P&L Akun Cent Riil)"]:::execute
+        
+        %% Mengembalikan Kontrol Ke Titik Awal
+        TG_REPT --> AG{Audit Kondisi Volatilitas Makro: Apakah Pasar Sudah Kembali Tenang & Spread Mengempis Normal?}:::level3
+        AG -->|No| AG
+        AG -->|Yes| AH["Reset Aturan Master: Kembalikan Status Master REGIME_STATUS = NORMAL_REGULER_MODE"]:::normal
+        AH -->|Looping Sempurna Terbuka Kembali Ke Titik Awal| D
+    end
+
+    %% Hubungan Garis Putus-putus Evaluasi ke Loop End
+    K -.-> U
