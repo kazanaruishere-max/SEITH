@@ -1,5 +1,6 @@
 """AI SEITH Python Bridge — Web scraper wrapper"""
 
+import json
 from typing import Optional
 from datetime import datetime
 import re
@@ -8,8 +9,8 @@ import requests
 from bs4 import BeautifulSoup
 
 
-def fetch_forex_factory(url: str) -> Optional[list]:
-    """Scrape ForexFactory calendar for news events"""
+def fetch_forex_factory(url: str) -> Optional[str]:
+    """Scrape ForexFactory calendar, return JSON string"""
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -50,11 +51,11 @@ def fetch_forex_factory(url: str) -> Optional[list]:
             "previous": previous,
         })
 
-    return events if events else None
+    return json.dumps(events) if events else None
 
 
-def fetch_investing_com(url: str) -> Optional[list]:
-    """Scrape Investing.com calendar using Playwright"""
+def fetch_investing_com(url: str) -> Optional[str]:
+    """Scrape Investing.com calendar using Playwright, return JSON string"""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -93,7 +94,7 @@ def fetch_investing_com(url: str) -> Optional[list]:
                 })
 
             browser.close()
-            return events if events else None
+            return json.dumps(events) if events else None
 
     except Exception as e:
         print(f"[Scraper] Investing.com failed: {e}")
