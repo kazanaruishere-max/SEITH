@@ -4156,6 +4156,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "sqlx",
  "statrs",
  "thiserror 2.0.18",
  "tokio",
