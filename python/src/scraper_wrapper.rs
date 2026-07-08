@@ -1,25 +1,35 @@
 // Web scraper wrapper — PyO3 bridge
-// Stub only — no implementation yet
+// Wraps python/seith_bridge/scraper.py functions
 
 #![allow(non_local_definitions)]
 
 use pyo3::prelude::*;
 
 #[pyclass]
-pub struct ScraperWrapper {}
+pub struct ScraperWrapper;
 
 #[pymethods]
 impl ScraperWrapper {
     #[new]
-    pub fn new() -> Self {
-        Self {}
+    fn new() -> Self {
+        Self
     }
 
-    fn fetch_forex_factory(&self, _url: &str) -> PyResult<String> {
-        todo!("Implement Forex Factory scraping via Python BeautifulSoup")
+    fn fetch_forex_factory(&self, url: &str) -> PyResult<Option<String>> {
+        Python::with_gil(|py| {
+            let sc = PyModule::import(py, "seith_bridge.scraper")?;
+            let result = sc.call_method1("fetch_forex_factory", (url,))?;
+            let data: Option<String> = result.extract()?;
+            Ok(data)
+        })
     }
 
-    fn fetch_investing_com(&self, _url: &str) -> PyResult<String> {
-        todo!("Implement Investing.com scraping via Python Playwright")
+    fn fetch_investing_com(&self, url: &str) -> PyResult<Option<String>> {
+        Python::with_gil(|py| {
+            let sc = PyModule::import(py, "seith_bridge.scraper")?;
+            let result = sc.call_method1("fetch_investing_com", (url,))?;
+            let data: Option<String> = result.extract()?;
+            Ok(data)
+        })
     }
 }
