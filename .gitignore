@@ -1,0 +1,43 @@
+# AI SEITH - Git Ignore
+
+# Rust build artifacts
+target/
+
+# Environment files
+.env
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Python bridge
+python/target/
+python/__pycache__/
+*.pyc
+
+# Jupyter notebooks
+jupyter/.ipynb_checkpoints/
+jupyter/**/__pycache__/
+
+# Logs
+logs/
+*.log
+
+# Data files (user-specific)
+data/
+!data/.gitkeep
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker volumes (not used in dev)
+docker/volumes/

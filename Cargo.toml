@@ -1,0 +1,73 @@
+[workspace]
+resolver = "2"
+members = [
+    "seith-bin",
+    "shared",
+    "python",
+    "commodities/XAUUSD",
+    "commodities/majors/EURUSD",
+    "commodities/majors/GBPUSD",
+    "commodities/majors/USDJPY",
+    "commodities/majors/USDCHF",
+    "commodities/majors/USDCAD",
+    "commodities/majors/AUDUSD",
+    "crypto/BTCUSD",
+    "crypto/ETHUSD",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["AI SEITH Team"]
+license = "MIT"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+tokio-macros = "1.0"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite", "migrate"] }
+
+# Python FFI
+pyo3 = { version = "0.20", features = ["auto-initialize"] }
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Time
+chrono = "0.4"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+tracing = "0.1"
+
+# Environment
+dotenvy = "0.15"
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Data processing
+polars = { version = "0.43", features = ["lazy"] }
+
+# Statistics
+statrs = "0.17"
+
+# Float comparison
+float-cmp = "0.9"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

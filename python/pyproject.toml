@@ -1,0 +1,9 @@
+[build-system]
+requires = ["maturin>=1.0"]
+build-backend = "maturin"
+
+[project]
+name = "seith-bridge"
+version = "0.1.0"
+description = "AI SEITH Python Bridge — MT5, Telegram, Scraper"
+requires-python = ">=3.10"

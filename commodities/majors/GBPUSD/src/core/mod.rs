@@ -1,0 +1,1 @@
+// GBPUSD core — PLACEHOLDER

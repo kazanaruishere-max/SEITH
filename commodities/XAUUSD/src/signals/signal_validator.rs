@@ -1,0 +1,2 @@
+// Signal Validator
+// Stub only

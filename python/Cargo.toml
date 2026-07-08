@@ -1,0 +1,16 @@
+[package]
+name = "seith-python"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "seith_python"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { workspace = true, features = ["extension-module"] }
+anyhow = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }

@@ -1,0 +1,19 @@
+[package]
+name = "seith-bin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { path = "../shared" }
+xauusd = { path = "../commodities/XAUUSD" }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+tracing = { workspace = true }
+
+[[bin]]
+name = "seith"
+path = "src/main.rs"
