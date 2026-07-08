@@ -7,6 +7,7 @@ use tokio::time::interval;
 use super::anti_paralysis::AntiParalysis;
 use super::state_manager::{StateManager, TradingState};
 use crate::core::l0_infra;
+use shared::external::news_aggregator;
 
 const TICK_INTERVAL_SECS: u64 = 15;
 const TICK_M1: u64 = 60;
@@ -70,9 +71,10 @@ impl EventLoop {
             self.state.set_state(TradingState::CrisisAdaptation);
         }
 
-        // L2: News check (stub - will be implemented in Phase 4)
-        // TODO: call news_aggregator::has_red_folder_soon()
-        let has_news = false;
+        // L2: News check
+        let has_news = news_aggregator::has_red_folder_soon()
+            .await
+            .unwrap_or(false);
 
         if has_news {
             self.state.set_state(TradingState::NewsAnomalyMode);

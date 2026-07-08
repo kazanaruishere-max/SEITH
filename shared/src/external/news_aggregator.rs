@@ -1,13 +1,13 @@
-// News aggregator — dual-parallel async calendar scraper
-// Uses Python scraper via PyO3 for ForexFactory + Investing.com
+// News aggregator — economic calendar via Python bridge
+// Multi-source: cloudscraper (ForexFactory) → TradingEconomics API → schedule fallback
 
 use anyhow::Result;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use serde::Deserialize;
 use tokio::task;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct RawNewsEvent {
+pub struct RawCalendarEvent {
     pub time: String,
     pub currency: String,
     pub impact: String,
@@ -28,18 +28,15 @@ pub struct NewsEvent {
     pub previous: Option<String>,
 }
 
-fn parse_news_json(json_str: &str) -> Result<Vec<NewsEvent>> {
-    let raw: Vec<RawNewsEvent> = serde_json::from_str(json_str)?;
+fn parse_calendar_json(json_str: &str) -> Result<Vec<NewsEvent>> {
+    let raw: Vec<RawCalendarEvent> = serde_json::from_str(json_str)?;
     let now = Utc::now();
     Ok(raw
         .into_iter()
         .map(|r| {
-            let parsed_time = chrono::NaiveDateTime::parse_from_str(&r.time, "%Y-%m-%d %H:%M:%S")
-                .ok()
-                .and_then(|t| Utc.from_local_datetime(&t).single())
-                .unwrap_or(now);
+            let parsed = parse_ff_time(&r.time).unwrap_or(now);
             NewsEvent {
-                time: parsed_time,
+                time: parsed,
                 currency: r.currency,
                 impact: r.impact,
                 title: r.title,
@@ -63,40 +60,34 @@ fn parse_news_json(json_str: &str) -> Result<Vec<NewsEvent>> {
         .collect())
 }
 
-pub async fn fetch_forex_factory() -> Result<Vec<NewsEvent>> {
-    let url = "https://www.forexfactory.com/calendar";
-    let result = task::spawn_blocking(move || {
-        pyo3::Python::with_gil(|py| {
-            let scraper = pyo3::types::PyModule::import(py, "seith_bridge.scraper")?;
-            let json_str: Option<String> = scraper
-                .call_method1("fetch_forex_factory", (url,))?
-                .extract()?;
-            Ok::<_, anyhow::Error>(json_str)
-        })
-    })
-    .await??;
+fn parse_ff_time(s: &str) -> Option<DateTime<Utc>> {
+    let now = Utc::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    let s = s.trim();
 
-    match result {
-        Some(json) => {
-            let events = parse_news_json(&json)?;
-            log::info!("ForexFactory: {} events fetched", events.len());
-            Ok(events)
-        }
-        None => {
-            log::warn!("ForexFactory returned no data");
-            Ok(vec![])
-        }
+    // "2026-07-08 8:45p" or "2026-07-08 10:00"
+    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
+        return Some(Utc.from_utc_datetime(&dt));
     }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{} {}", today, s), "%Y-%m-%d %H:%M") {
+        return Some(Utc.from_utc_datetime(&dt));
+    }
+    // "8:45p" → 20:45
+    if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{} {}", today, s), "%Y-%m-%d %I:%M%p") {
+        return Some(Utc.from_utc_datetime(&dt));
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{} {}", today, s), "%Y-%m-%d %H:%M") {
+        return Some(Utc.from_utc_datetime(&dt));
+    }
+    None
 }
 
-pub async fn fetch_investing_com() -> Result<Vec<NewsEvent>> {
-    let url = "https://www.investing.com/economic-calendar/";
-    let result = task::spawn_blocking(move || {
+pub async fn fetch_calendar() -> Result<Vec<NewsEvent>> {
+    let result = task::spawn_blocking(|| {
         pyo3::Python::with_gil(|py| {
-            let scraper = pyo3::types::PyModule::import(py, "seith_bridge.scraper")?;
-            let json_str: Option<String> = scraper
-                .call_method1("fetch_investing_com", (url,))?
-                .extract()?;
+            let cal = pyo3::types::PyModule::import(py, "seith_bridge.calendar")?;
+            let json_str: Option<String> =
+                cal.call_method0("fetch_economic_calendar")?.extract()?;
             Ok::<_, anyhow::Error>(json_str)
         })
     })
@@ -104,30 +95,24 @@ pub async fn fetch_investing_com() -> Result<Vec<NewsEvent>> {
 
     match result {
         Some(json) => {
-            let events = parse_news_json(&json)?;
-            log::info!("Investing.com: {} events fetched", events.len());
+            let events = parse_calendar_json(&json)?;
+            log::info!("Calendar: {} events fetched", events.len());
             Ok(events)
         }
         None => {
-            log::warn!("Investing.com returned no data");
+            log::warn!("Calendar returned no data");
             Ok(vec![])
         }
     }
 }
 
 pub async fn has_red_folder_soon() -> Result<bool> {
-    let ff = fetch_forex_factory().await?;
-    let ic = fetch_investing_com().await?;
-    let all_events = [ff, ic].concat();
-
+    let events = fetch_calendar().await?;
     let now = Utc::now();
-    let has_red = all_events.iter().any(|e| {
-        let currency_ok = e.currency.to_uppercase().contains("USD");
-        let impact_ok = e.impact.to_lowercase().contains("high");
+    let has_red = events.iter().any(|e| {
         let window_start = now + chrono::Duration::minutes(30);
         let window_end = now + chrono::Duration::minutes(60);
-        currency_ok && impact_ok && e.time >= window_start && e.time <= window_end
+        e.time >= window_start && e.time <= window_end
     });
-
     Ok(has_red)
 }
