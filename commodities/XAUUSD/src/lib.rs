@@ -8,3 +8,12 @@ pub mod data;
 pub mod external;
 pub mod indicators;
 pub mod signals;
+
+use core::l3_engine::event_loop::EventLoop;
+
+pub async fn run() {
+    dotenvy::dotenv().ok();
+    log::info!("Starting XAUUSD pipeline...");
+    let mut el = EventLoop::new("XAUUSD");
+    el.run().await;
+}

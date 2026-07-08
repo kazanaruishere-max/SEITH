@@ -2735,6 +2735,7 @@ name = "seith-bin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dotenvy",
  "env_logger",
  "log",
  "shared",
@@ -4150,6 +4151,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dotenvy",
  "float-cmp",
  "log",
  "polars",
