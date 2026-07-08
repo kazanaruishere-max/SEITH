@@ -1,27 +1,43 @@
 """AI SEITH Python Bridge — MT5 API wrapper"""
 
 import MetaTrader5 as mt5
-from typing import Optional
+from typing import Optional, Union
 from datetime import datetime
+
+_initialized = False
 
 
 def init_mt5(path: str = "") -> bool:
     """Initialize MT5 terminal connection"""
-    initialized = mt5.initialize(path=path) if path else mt5.initialize()
+    global _initialized
+    if _initialized:
+        return True
+    # Attempt initialize
+    initialized = False
+    if path:
+        print(f"[MT5] Attempting initialize with path: {path}")
+        initialized = mt5.initialize(path)
+    else:
+        print("[MT5] Attempting initialize with default path")
+        initialized = mt5.initialize()
+
     if not initialized:
-        error = mt5.last_error()
-        print(f"[MT5] Initialize failed: {error}")
+        err_code, err_desc = mt5.last_error()
+        print(f"[MT5] Initialize failed: code={err_code}, desc={err_desc}")
         return False
+    _initialized = True
     print(f"[MT5] Terminal initialized (build {mt5.version()})")
     return True
 
 
-def login(account: int, password: str, server: str) -> bool:
+def login(account: Union[int, str], password: str, server: str) -> bool:
     """Login to MT5 trading account"""
+    if not init_mt5():
+        return False
     authorized = mt5.login(account, password=password, server=server)
     if not authorized:
-        error = mt5.last_error()
-        print(f"[MT5] Login failed: {error}")
+        err_code, err_desc = mt5.last_error()
+        print(f"[MT5] Login failed: code={err_code}, desc={err_desc}")
         return False
     print(f"[MT5] Logged in to account {account} on {server}")
     return True
@@ -100,5 +116,9 @@ def place_order(
 
 def shutdown() -> None:
     """Shutdown MT5 connection"""
+    global _initialized
+    if not _initialized:
+        return
     mt5.shutdown()
+    _initialized = False
     print("[MT5] Shutdown")

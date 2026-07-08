@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::config::env_loader;
+
 /// Global settings untuk AI SEITH
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -28,6 +30,20 @@ pub struct DatabaseSettings {
 impl Settings {
     /// Load settings from environment variables
     pub fn from_env() -> anyhow::Result<Self> {
-        todo!("Load settings from .env file")
+        env_loader::load_env()?;
+
+        Ok(Self {
+            broker: BrokerSettings {
+                name: env_loader::get_env_required("MT5_SERVER"),
+                account_type: env_loader::get_env_required("MT5_ACCOUNT"),
+            },
+            telegram: TelegramSettings {
+                bot_token: env_loader::get_env_required("TELEGRAM_BOT_TOKEN"),
+                chat_id: env_loader::get_env_required("TELEGRAM_CHAT_ID"),
+            },
+            database: DatabaseSettings {
+                url: env_loader::get_env_required("DATABASE_URL"),
+            },
+        })
     }
 }
