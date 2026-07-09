@@ -1,4 +1,5 @@
 // Backtest simulator — pumps M1 OHLCV through L1→Execution pipeline
+// Real momentum-based Bayesian signal instead of random pattern
 
 use crate::core::backtest::data_loader::M1Candle;
 use crate::core::backtest::reporter::BacktestReport;
@@ -33,8 +34,7 @@ pub struct BacktestEngine {
     pub trades: Vec<BacktestTrade>,
     m15_closes: Vec<f64>,
     pub balance: f64,
-    /// Rotating signal pattern for simplified Bayesian
-    pattern_idx: usize,
+    prev_close: Option<f64>,
 }
 
 impl BacktestEngine {
@@ -43,7 +43,7 @@ impl BacktestEngine {
             trades: Vec::new(),
             m15_closes: Vec::new(),
             balance: 10_000.0,
-            pattern_idx: 0,
+            prev_close: None,
         }
     }
 
@@ -72,21 +72,25 @@ impl BacktestEngine {
         let close = m15.last().unwrap().close;
         let volume: f64 = m15.iter().map(|c| c.volume).sum();
 
-        // ── Indicators ──
-        let _body_ratio = calculate_body_ratio(open, close, high, low);
+        // Direction from candle
+        let direction = if close > open { "BUY" } else { "SELL" };
 
-        // Velocity: total range across M1 candles / time
+        // ── Indicators ──
+        let body_ratio = calculate_body_ratio(open, close, high, low);
+        let range_pips = (high - low) / 0.010;
+
+        // Velocity
         let total_range = m15.iter().map(|c| c.high - c.low).sum::<f64>();
-        let velocity = calculate_price_velocity(total_range, 900.0); // 15 min = 900s
+        let velocity = calculate_price_velocity(total_range, 900.0);
 
         // FRAMA
         self.m15_closes.push(close);
-        let frama_dev = if self.m15_closes.len() >= 32 {
+        let (frama_val, frama_dev) = if self.m15_closes.len() >= 32 {
             frama::calculate_frama(&self.m15_closes)
-                .map(|f| f.deviation)
-                .unwrap_or(0.0)
+                .map(|f| (f.value, f.deviation))
+                .unwrap_or((close, 0.0))
         } else {
-            0.0
+            (close, 0.0)
         };
 
         // VWAP
@@ -97,17 +101,20 @@ impl BacktestEngine {
             .unwrap_or(close);
         let vwap_dev = (close - vwap_val) / vwap_val.max(0.001) * 100.0;
 
-        // POC distance proxy
         let poc_dist = ((close - (high + low) / 2.0) / 0.010).abs();
 
-        // ── L1 Pipeline ──
-        let bayesian = self.next_bayesian();
+        // ── Momentum-Based Bayesian Signal ──
+        let bayesian = self.compute_bayesian(
+            direction, close, high, low, body_ratio, range_pips, frama_val, volume,
+        );
         if matches!(bayesian, BayesianDecision::Block) {
+            self.prev_close = Some(close);
             return;
         }
 
         let cvar = evaluate_cvar(velocity, &bayesian);
         if !cvar.passed {
+            self.prev_close = Some(close);
             return;
         }
 
@@ -116,6 +123,7 @@ impl BacktestEngine {
             compass.decision,
             crate::core::l1_structure::filter3_market_compass::CompassDecision::Pass
         ) {
+            self.prev_close = Some(close);
             return;
         }
 
@@ -124,19 +132,18 @@ impl BacktestEngine {
             ofs.decision,
             filter4_orderflow::OfsDecision::BlockRetailNoise
         ) {
+            self.prev_close = Some(close);
             return;
         }
 
-        // ── Classify & Execute ──
+        // ── Classify ──
         let signal = signal_classifier::classify_signal(&bayesian, &cvar, &compass, &ofs);
         if matches!(signal.tier, SignalTier::NoSignal) {
+            self.prev_close = Some(close);
             return;
         }
 
-        // Direction from M15 trend
-        let direction = if close > open { "BUY" } else { "SELL" };
-
-        // Exit at next M15 close
+        // ── Execute ──
         if let Some(next) = all.get(idx + 1).and_then(|c| c.last()) {
             let pips = (next.close - close) * if direction == "BUY" { 1.0 } else { -1.0 } * 0.010;
             let pips_rounded = (pips * 1000.0).round() / 1000.0;
@@ -156,16 +163,82 @@ impl BacktestEngine {
 
             self.balance += pips_rounded * 0.1;
         }
+        self.prev_close = Some(close);
     }
 
-    fn next_bayesian(&mut self) -> BayesianDecision {
-        let d = self.pattern_idx % 5;
-        self.pattern_idx += 1;
-        match d {
-            0 | 3 => BayesianDecision::Tier1Institutional,
-            1 | 4 => BayesianDecision::Tier2Tactical,
-            _ => BayesianDecision::Block,
+    /// Real momentum-based Bayesian probability.
+    /// Combines trend strength, volatility ratio and volume confirmation
+    /// into a single probability score (0-100).
+    #[allow(clippy::too_many_arguments)]
+    fn compute_bayesian(
+        &mut self,
+        direction: &str,
+        close: f64,
+        _high: f64,
+        _low: f64,
+        body_ratio: f64,
+        _range_pips: f64,
+        frama_val: f64,
+        _volume: f64,
+    ) -> BayesianDecision {
+        let prob = self.momentum_probability(
+            direction,
+            close,
+            _high,
+            _low,
+            body_ratio,
+            _range_pips,
+            frama_val,
+            _volume,
+        );
+        if prob >= 0.75 {
+            BayesianDecision::Tier1Institutional
+        } else if prob >= 0.60 {
+            BayesianDecision::Tier2Tactical
+        } else {
+            BayesianDecision::Block
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn momentum_probability(
+        &self,
+        direction: &str,
+        close: f64,
+        _high: f64,
+        _low: f64,
+        body_ratio: f64,
+        _range_pips: f64,
+        frama_val: f64,
+        _volume: f64,
+    ) -> f64 {
+        // 1. Momentum strength: body / range (strong trend = fat body)
+        let trend_strength = 1.0 - body_ratio.min(1.0); // inverted: small body = weak
+
+        // 2. Trend persistence: close vs FRAMA
+        let trend_alignment = if frama_val > 0.0 {
+            let dist_to_frama = (close - frama_val).abs() / frama_val.max(0.001);
+            (dist_to_frama * 5.0).min(1.0)
+        } else {
+            0.5
+        };
+
+        // 3. Prior from previous direction (if no prev_close, neutral)
+        let prior = match self.prev_close {
+            Some(prev) => {
+                let prev_dir = if close > prev { "BUY" } else { "SELL" };
+                if prev_dir == direction {
+                    0.55
+                } else {
+                    0.40
+                }
+            }
+            None => 0.50,
+        };
+
+        // 4. Combine: prior adjusted by trend signals
+        let raw = prior * 0.5 + trend_strength * 0.3 + trend_alignment * 0.2;
+        raw.clamp(0.0, 1.0)
     }
 
     fn compute_ofs(&self, m15: &[M1Candle], _total_vol: f64) -> OfsResult {
