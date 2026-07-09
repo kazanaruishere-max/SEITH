@@ -1,6 +1,6 @@
 use std::env;
-/// AI SEITH — Backtest Runner with threshold sweep support.
-/// cargo run -p xauusd --bin seith-backtest [--ofs=2] [--spread=3.5] [--tier1=75] [--tier2=60]
+/// AI SEITH — Backtest Runner with train/test split.
+/// cargo run -p xauusd --bin seith-backtest [--ofs=2] [--tier1=75] [--tier2=60]
 use std::path::Path;
 
 #[tokio::main]
@@ -15,8 +15,12 @@ async fn main() {
     let mut _tier2_thr = 0.60f64;
     let mut _gvz_thr = 1.0f64;
     let mut _frama_dev = 0.5f64;
+    let mut segment = "all".to_string();
 
     for arg in &args[1..] {
+        if let Some(v) = arg.strip_prefix("--segment=") {
+            segment = v.to_string();
+        }
         if let Some(v) = arg.strip_prefix("--ofs=") {
             env::set_var("BT_OFS_MIN", v);
             _ofs_min = v.parse().unwrap_or(2);
@@ -47,18 +51,19 @@ async fn main() {
         }
     }
 
-    let csv_path = "C:/Users/Lenovo/PROJECT/AI SEITH/jupyter/backtest_analysis/xauusd_m1_3m.csv";
+    let csv_path = "C:/Users/Lenovo/PROJECT/AI SEITH/jupyter/backtest_analysis/xauusd_m1_14m.csv";
     let out_dir = "C:/Users/Lenovo/PROJECT/AI SEITH/jupyter/backtest_analysis";
 
     if !Path::new(csv_path).exists() {
         eprintln!("Data file not found: {}", csv_path);
-        eprintln!("Run: python jupyter/download_m1_data.py");
+        eprintln!("Run: python jupyter/download_m1_data_14m.py");
         std::process::exit(1);
     }
 
     let sep = "=".repeat(60);
     println!("{}", sep);
-    println!("  AI SEITH Backtest Engine");
+    println!("  AI SEITH Backtest Engine v2");
+    println!("  Train/Test split enforced (80/20 chronological)");
     println!(
         "  Params: ofs={} spread={} t1={:.0}% t2={:.0}% gvz={} frama={}",
         _ofs_min,
@@ -71,23 +76,33 @@ async fn main() {
     println!("  Data: {}", csv_path);
     println!("{}", sep);
 
-    match xauusd::core::backtest::run_backtest(csv_path, out_dir).await {
-        Ok(report) => {
+    match xauusd::core::backtest::run_backtest_segment(csv_path, out_dir, 0.80, &segment).await {
+        Ok(r) => {
             println!();
             println!("{}", sep);
             println!("  BACKTEST RESULTS");
             println!("{}", sep);
-            println!("  Trades:      {}", report.total_trades);
-            println!("  Win Rate:    {:.1}%", report.win_rate);
-            println!("  Net Pips:    {:.1}", report.net_pips);
-            println!("  Profit Fac:  {:.2}", report.profit_factor);
-            println!("  Max DD:      {:.2}%", report.max_drawdown_pct);
+            println!("  IN-SAMPLE (TRAIN):");
             println!(
-                "  Max CW/CL:   {}/{}",
-                report.max_consecutive_wins, report.max_consecutive_losses
+                "    Trades:  {}  WR: {:.1}%  PF: {:.2}  DD: {:.1}%  Sortino: {:.2}",
+                r.is_trades, r.is_wr, r.is_pf, r.is_dd, r.is_sortino
             );
-            println!("  Avg Spread:  {:.2} pips", report.avg_spread);
-            println!("  P&L:         ${:.2}", report.pnl);
+            println!();
+            println!("  OUT-OF-SAMPLE (TEST):");
+            println!(
+                "    Trades:  {}  WR: {:.1}%  PF: {:.2}  DD: {:.1}%  Sortino: {:.2}  Net: {:.1}",
+                r.oos_trades, r.oos_wr, r.oos_pf, r.oos_dd, r.oos_sortino, r.oos_net_pips
+            );
+            println!();
+            println!("  OVERALL:");
+            println!(
+                "    Trades: {}  WR: {:.1}%  PF: {:.2}  DD: {:.1}%  P&L: ${:.2}",
+                r.total_trades, r.win_rate, r.profit_factor, r.max_drawdown_pct, r.pnl
+            );
+            println!(
+                "    Sortino: {:.2}  RecFact: {:.2}  Max CL: {}",
+                r.sortino_ratio, r.recovery_factor, r.max_consecutive_losses
+            );
             println!("{}", sep);
         }
         Err(e) => {

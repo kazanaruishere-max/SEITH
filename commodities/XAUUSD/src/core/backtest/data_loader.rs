@@ -1,5 +1,5 @@
-// Load OHLCV M1 data from CSV
-// Columns: time,open,high,low,close,volume
+// Load OHLCV M1 data from CSV with train/test split
+// Expected columns: time,open,high,low,close,volume
 
 use anyhow::{Context, Result};
 
@@ -13,7 +13,16 @@ pub struct M1Candle {
     pub volume: f64,
 }
 
-pub fn load_ohlcv_csv(path: &str) -> Result<Vec<M1Candle>> {
+#[derive(Debug, Clone)]
+pub struct BacktestData {
+    pub all: Vec<M1Candle>,
+    pub train: Vec<M1Candle>,
+    pub test: Vec<M1Candle>,
+    pub split_time: i64,
+}
+
+/// Load OHLCV and split chronologically: train_ratio (0.0-1.0) goes to train.
+pub fn load_ohlcv_csv(path: &str, train_ratio: f64) -> Result<BacktestData> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("Cannot read: {}", path))?;
 
@@ -27,7 +36,6 @@ pub fn load_ohlcv_csv(path: &str) -> Result<Vec<M1Candle>> {
         if parts.len() < 6 {
             continue;
         }
-
         let time: i64 = parts[0]
             .trim()
             .parse()
@@ -50,5 +58,19 @@ pub fn load_ohlcv_csv(path: &str) -> Result<Vec<M1Candle>> {
         anyhow::bail!("No candles loaded from {}", path);
     }
     candles.sort_by_key(|c| c.time);
-    Ok(candles)
+
+    // Chronological split
+    let split_idx = (candles.len() as f64 * train_ratio).floor() as usize;
+    let split_idx = split_idx.max(1).min(candles.len() - 1);
+    let split_time = candles[split_idx].time;
+
+    let train = candles[..split_idx].to_vec();
+    let test = candles[split_idx..].to_vec();
+
+    Ok(BacktestData {
+        all: candles,
+        train,
+        test,
+        split_time,
+    })
 }
