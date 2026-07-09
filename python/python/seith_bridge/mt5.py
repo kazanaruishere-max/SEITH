@@ -114,6 +114,47 @@ def place_order(
     return result.order
 
 
+import json
+
+def get_tick_json(symbol: str) -> Optional[str]:
+    """Get tick data as JSON string for Rust FFI."""
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        return None
+    return json.dumps({
+        "bid": tick.bid,
+        "ask": tick.ask,
+        "time": datetime.fromtimestamp(tick.time).isoformat(),
+    })
+
+
+def get_dom_json(symbol: str) -> Optional[str]:
+    """Get DOM as JSON string for Rust FFI."""
+    mt5.symbol_select(symbol, True)
+    subscribed = mt5.market_book_add(symbol)
+    if not subscribed:
+        return None
+    import time
+    time.sleep(0.5)
+    raw = mt5.market_book_get(symbol)
+    if raw is None or len(raw) == 0:
+        return None
+    asks_raw = [b for b in raw if b.type == 1]
+    bids_raw = [b for b in raw if b.type == 2]
+    asks = [{"price": round(b.price, 3), "volume": b.volume} for b in reversed(asks_raw)]
+    bids = [{"price": round(b.price, 3), "volume": b.volume} for b in bids_raw]
+    best_ask = asks[0]["price"] if asks else 0.0
+    best_bid = bids[0]["price"] if bids else 0.0
+    return json.dumps({
+        "symbol": symbol,
+        "asks": asks,
+        "bids": bids,
+        "best_ask": best_ask,
+        "best_bid": best_bid,
+        "level_count": len(raw),
+    })
+
+
 def get_dom(symbol: str) -> Optional[dict]:
     """Get Depth of Market snapshot.
 

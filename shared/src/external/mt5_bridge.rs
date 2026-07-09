@@ -3,6 +3,17 @@
 
 use anyhow::Result;
 
+/// Raw DOM level from Python bridge: (price, volume, mt5_type)
+pub type DomRawLevel = (f64, u64, i32);
+
+/// Full tick data: (bid, ask, spread)
+#[derive(Debug, Clone)]
+pub struct TickData {
+    pub bid: f64,
+    pub ask: f64,
+    pub spread: f64,
+}
+
 pub struct Mt5Api {
     symbol: String,
 }
@@ -27,7 +38,6 @@ impl Mt5Api {
             let mt5 = pyo3::types::PyModule::import(py, "seith_bridge.mt5")
                 .map_err(|e| anyhow::anyhow!("PyO3 import mt5: {}", e))?;
 
-            // 1. Initialize
             let init_ok: bool = mt5
                 .call_method1("init_mt5", (path,))
                 .map_err(|e| anyhow::anyhow!("PyO3 init_mt5: {}", e))?
@@ -36,7 +46,6 @@ impl Mt5Api {
                 anyhow::bail!("Failed to initialize MetaTrader 5 terminal");
             }
 
-            // 2. Login
             let login_ok: bool = mt5
                 .call_method1("login", (account, password, server))
                 .map_err(|e| anyhow::anyhow!("PyO3 login: {}", e))?
@@ -60,8 +69,64 @@ impl Mt5Api {
         })
     }
 
+    /// Fetch live tick with bid/ask/spread via JSON bridge
+    pub async fn get_tick(&self) -> Result<TickData> {
+        let json_str: Option<String> = pyo3::Python::with_gil(|py| {
+            let mt5 = pyo3::types::PyModule::import(py, "seith_bridge.mt5")?;
+            mt5.call_method1("get_tick_json", (&self.symbol,))?
+                .extract()
+        })?;
+        match json_str {
+            Some(s) => {
+                let v: serde_json::Value = serde_json::from_str(&s)?;
+                let bid = v["bid"].as_f64().unwrap_or(0.0);
+                let ask = v["ask"].as_f64().unwrap_or(0.0);
+                Ok(TickData {
+                    bid,
+                    ask,
+                    spread: (ask - bid).max(0.0),
+                })
+            }
+            None => anyhow::bail!("No tick data for {}", self.symbol),
+        }
+    }
+
+    /// Fetch Depth of Market via JSON bridge.
+    /// Returns Vec<(price, volume, mt5_type)> where type=1=ASK, type=2=BID.
+    pub async fn get_dom_raw(&self) -> Result<Vec<DomRawLevel>> {
+        let json_str: Option<String> = pyo3::Python::with_gil(|py| {
+            let mt5 = pyo3::types::PyModule::import(py, "seith_bridge.mt5")?;
+            mt5.call_method1("get_dom_json", (&self.symbol,))?.extract()
+        })?;
+        match json_str {
+            Some(s) => {
+                let v: serde_json::Value = serde_json::from_str(&s)?;
+                let mut levels = Vec::new();
+                if let Some(asks) = v["asks"].as_array() {
+                    for ask in asks {
+                        levels.push((
+                            ask["price"].as_f64().unwrap_or(0.0),
+                            ask["volume"].as_i64().unwrap_or(0) as u64,
+                            1,
+                        ));
+                    }
+                }
+                if let Some(bids) = v["bids"].as_array() {
+                    for bid in bids {
+                        levels.push((
+                            bid["price"].as_f64().unwrap_or(0.0),
+                            bid["volume"].as_i64().unwrap_or(0) as u64,
+                            2,
+                        ));
+                    }
+                }
+                Ok(levels)
+            }
+            None => anyhow::bail!("No DOM data for {}", self.symbol),
+        }
+    }
+
     pub async fn get_account(&self) -> Result<i64> {
-        // Expose username/account from settings
         let account_str = std::env::var("MT5_ACCOUNT")?;
         let account: i64 = account_str.parse()?;
         Ok(account)
@@ -76,8 +141,8 @@ impl Mt5Api {
         tp: f64,
     ) -> Result<u64> {
         let mt5_type = match order_type {
-            "BUY" => 0,  // mt5.ORDER_TYPE_BUY
-            "SELL" => 1, // mt5.ORDER_TYPE_SELL
+            "BUY" => 0,
+            "SELL" => 1,
             _ => anyhow::bail!("Invalid order type: {}", order_type),
         };
         pyo3::Python::with_gil(|py| {

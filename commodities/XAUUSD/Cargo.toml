@@ -32,3 +32,6 @@ statrs = { workspace = true }
 
 # Float comparison
 float-cmp = { workspace = true }
+
+# PyO3 FFI (transitive via shared, needed for types)
+pyo3 = { workspace = true }

@@ -4156,6 +4156,7 @@ dependencies = [
  "float-cmp",
  "log",
  "polars",
+ "pyo3",
  "serde",
  "serde_json",
  "shared",

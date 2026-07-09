@@ -6,9 +6,7 @@ pub mod dom;
 pub mod jam_hantu;
 pub mod normalizer;
 
-pub use data_feed::DataFeed;
-pub use data_feed::Ohlcv;
-pub use data_feed::PriceTick;
+pub use data_feed::{DataFeed, DomSnapshotCache, Ohlcv, PriceTick};
 pub use dom::{calculate_slippage, DomLevel, DomSnapshot, DomValidity};
 pub use jam_hantu::{force_close_all, is_jam_hantu_now, is_jam_hantu_window, minutes_to_jam_hantu};
 pub use normalizer::{
