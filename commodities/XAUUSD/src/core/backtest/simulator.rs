@@ -114,11 +114,33 @@ impl BacktestEngine {
         let vwap_dev = (close - vwap_val) / vwap_val.max(0.001) * 100.0;
         let poc_dist = ((close - (high + low) / 2.0) / 0.010).abs();
 
+        // ── Volume ratio (feeds Bayesian) ──
+        let bullish_vol: f64 = m15
+            .iter()
+            .filter(|c| c.close >= c.open)
+            .map(|c| c.volume)
+            .sum();
+        let bearish_vol: f64 = m15
+            .iter()
+            .filter(|c| c.close < c.open)
+            .map(|c| c.volume)
+            .sum();
+        let vol_total = bullish_vol + bearish_vol;
+        let vol_ratio = if vol_total > 0.0 {
+            if direction == "BUY" {
+                bullish_vol / vol_total
+            } else {
+                bearish_vol / vol_total
+            }
+        } else {
+            0.5
+        };
+
         // ── Dedicated OFS components ──
         let ofs = self.compute_ofs_dedicated(m15, all_m1, idx);
 
         // ── L1 Pipeline ──
-        let bayesian = self.compute_bayesian(direction, close, body_ratio, frama_val);
+        let bayesian = self.compute_bayesian(direction, close, body_ratio, frama_val, vol_ratio);
         if matches!(bayesian, BayesianDecision::Block) {
             self.prev_close = Some(close);
             return;
@@ -333,16 +355,17 @@ impl BacktestEngine {
         close: f64,
         body_ratio: f64,
         frama_val: f64,
+        vol_ratio: f64,
     ) -> BayesianDecision {
-        let p = self.momentum_probability(direction, close, body_ratio, frama_val);
+        let p = self.momentum_probability(direction, close, body_ratio, frama_val, vol_ratio);
         let t2: f64 = std::env::var("BT_TIER2_THR")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(0.60);
+            .unwrap_or(0.55);
         let t1: f64 = std::env::var("BT_TIER1_THR")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(0.75);
+            .unwrap_or(0.70);
         if p >= t1 {
             BayesianDecision::Tier1Institutional
         } else if p >= t2 {
@@ -352,32 +375,90 @@ impl BacktestEngine {
         }
     }
 
+    /// Improved momentum probability with 5 signals:
+    /// 1. Direction persistence (prior trend)
+    /// 2. Trend strength (body ratio, POSITIVE correlation)
+    /// 3. Momentum magnitude (% move relative to price)
+    /// 4. FRAMA alignment (trend structure confirmation)
+    /// 5. Volume confirmation (bullish/bearish volume ratio)
+    ///    Adaptive weight regime: amplifies when multiple signals align
     fn momentum_probability(
         &self,
         direction: &str,
         close: f64,
         body_ratio: f64,
         frama_val: f64,
+        vol_ratio: f64,
     ) -> f64 {
-        let trend_strength = 1.0 - body_ratio.min(1.0);
-        let trend_alignment = if frama_val > 0.0 {
-            let dist = (close - frama_val).abs() / frama_val.max(0.001);
-            (dist * 5.0).min(1.0)
-        } else {
-            0.5
-        };
-        let prior = match self.prev_close {
+        let empty = self.prev_close.is_none();
+
+        // 1. Direction persistence (prior)
+        let persistence = match self.prev_close {
             Some(prev) => {
                 let prev_dir = if close > prev { "BUY" } else { "SELL" };
                 if prev_dir == direction {
-                    0.55
+                    0.65
                 } else {
-                    0.40
+                    0.35
                 }
             }
             None => 0.50,
         };
-        (prior * 0.5 + trend_strength * 0.3 + trend_alignment * 0.2).clamp(0.0, 1.0)
+
+        // 2. Trend strength from body (FIXED: big body = strong trend)
+        let trend = body_ratio.clamp(0.0, 1.0);
+
+        // 3. Momentum magnitude relative to price
+        let momentum = if !empty {
+            let pct = ((close - self.prev_close.unwrap()) / self.prev_close.unwrap()).abs() * 100.0;
+            (pct / 0.3).min(1.0) // 0.3% move in 15min = strong
+        } else {
+            0.3
+        };
+
+        // 4. FRAMA alignment: price within 0.5% of FRAMA = aligned
+        let alignment = if frama_val > 0.0 && !empty {
+            let dist_pct = ((close - frama_val) / frama_val).abs() * 100.0;
+            if dist_pct < 0.5 {
+                0.7
+            }
+            // tight to FRAMA = strong trend
+            else if dist_pct < 1.5 {
+                0.5
+            }
+            // moderate
+            else {
+                0.3
+            } // far from FRAMA = mean reversion likely
+        } else {
+            0.5
+        };
+
+        // 5. Volume confirmation
+        let volume = vol_ratio.clamp(0.0, 1.0);
+
+        // Adaptive weights: count how many signals confirm
+        let confirm = [
+            persistence > 0.5,
+            trend > 0.5,
+            momentum > 0.5,
+            alignment > 0.5,
+            volume > 0.5,
+        ]
+        .iter()
+        .filter(|&&x| x)
+        .count();
+        let regime = if confirm >= 3 { "strong" } else { "weak" };
+
+        let (w_p, w_t, w_m, w_a, w_v) = if regime == "strong" {
+            (0.15, 0.20, 0.30, 0.15, 0.20)
+        } else {
+            (0.35, 0.15, 0.15, 0.20, 0.15)
+        };
+
+        let prob =
+            persistence * w_p + trend * w_t + momentum * w_m + alignment * w_a + volume * w_v;
+        prob.clamp(0.0, 1.0)
     }
 }
 
