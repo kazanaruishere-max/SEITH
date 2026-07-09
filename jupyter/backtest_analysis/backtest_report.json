@@ -1,0 +1,15 @@
+{
+  "total_trades": 1539,
+  "wins": 776,
+  "losses": 763,
+  "win_rate": 50.42235217673814,
+  "net_pips": 2.856,
+  "profit_factor": 1.08,
+  "max_consecutive_wins": 12,
+  "max_consecutive_losses": 9,
+  "max_drawdown_pct": 942.39,
+  "avg_spread": 0.5,
+  "avg_slippage": 0.001,
+  "final_balance": 10000.29,
+  "pnl": 0.29
+}

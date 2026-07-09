@@ -10,7 +10,7 @@ pub struct Frama {
 }
 
 pub fn calculate_frama(prices: &[f64]) -> Option<Frama> {
-    if prices.len() < FRAMA_PERIOD * 2 {
+    if prices.len() <= FRAMA_PERIOD * 2 {
         return None;
     }
     let half = FRAMA_PERIOD;

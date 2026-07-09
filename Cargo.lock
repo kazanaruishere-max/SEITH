@@ -4152,6 +4152,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dotenvy",
+ "env_logger",
  "float-cmp",
  "log",
  "polars",
