@@ -173,19 +173,6 @@ impl EventLoop {
             }
         }
 
-        // ── Initialize OANDA REST API ──
-        if let (Ok(token), Ok(account)) = (
-            std::env::var("OANDA_API_TOKEN"),
-            std::env::var("OANDA_ACCOUNT_ID"),
-        ) {
-            match shared::external::oanda_bridge::init_oanda(&token, &account, true).await {
-                Ok(true) => log::info!("OANDA REST API initialized"),
-                _ => log::warn!("OANDA REST API init failed (sentiment will use fallback)"),
-            }
-        } else {
-            log::warn!("OANDA_API_TOKEN not set (sentiment will use fallback)");
-        }
-
         let mut ticker = interval(Duration::from_secs(TICK_INTERVAL_SECS));
         loop {
             ticker.tick().await;
