@@ -114,6 +114,50 @@ def place_order(
     return result.order
 
 
+def get_dom(symbol: str) -> Optional[dict]:
+    """Get Depth of Market snapshot.
+
+    Raw MT5 book returned as single list sorted HIGHEST→LOWEST price.
+    MT5 BookInfo types:
+      type=1 = BOOK_TYPE_SELL = ASK (Limit Sell, higher prices)
+      type=2 = BOOK_TYPE_BUY  = BID (Limit Buy, lower prices)
+
+    Returns parsed dict:
+      - asks: type=1, sorted LOWEST→HIGHEST (best ask = index 0)
+      - bids: type=2, sorted HIGHEST→LOWEST (best bid = index 0)
+      - best_ask, best_bid, level_count
+    """
+    subscribed = mt5.market_book_add(symbol)
+    if not subscribed:
+        return None
+
+    raw = mt5.market_book_get(symbol)
+    if raw is None or len(raw) == 0:
+        return None
+
+    # type=1 = ASK (sell limit), type=2 = BID (buy limit)
+    # Raw array is HIGHEST→LOWEST price, ASK at top, BID at bottom
+    asks_raw = [b for b in raw if b.type == 1]   # higher price zone
+    bids_raw = [b for b in raw if b.type == 2]    # lower price zone
+
+    # ASK: reverse to LOWEST→HIGHEST (best ask = index 0)
+    asks = [{"price": round(b.price, 3), "volume": b.volume} for b in reversed(asks_raw)]
+    # BID: keep HIGHEST→LOWEST (best bid = index 0)
+    bids = [{"price": round(b.price, 3), "volume": b.volume} for b in bids_raw]
+
+    best_ask = asks[0]["price"] if asks else 0.0
+    best_bid = bids[0]["price"] if bids else 0.0
+
+    return {
+        "symbol": symbol,
+        "asks": asks,
+        "bids": bids,
+        "best_ask": best_ask,
+        "best_bid": best_bid,
+        "level_count": len(raw),
+    }
+
+
 def shutdown() -> None:
     """Shutdown MT5 connection"""
     global _initialized
