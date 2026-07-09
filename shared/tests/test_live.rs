@@ -50,7 +50,8 @@ fn setup() {
 #[ignore]
 async fn test_mt5_live_connection() -> Result<()> {
     setup();
-    let api = Mt5Api::new("XAUUSDm");
+    let symbol = std::env::var("MT5_SYMBOL").unwrap_or_else(|_| "XAUUSD.sml".to_string());
+    let api = Mt5Api::new(&symbol);
     let connect_res = api.connect().await;
     assert!(
         connect_res.is_ok(),
@@ -58,7 +59,7 @@ async fn test_mt5_live_connection() -> Result<()> {
         connect_res.err()
     );
     let price = api.get_price().await?;
-    println!("Live XAUUSD Price: {}", price);
+    println!("Live {} Price: {}", symbol, price);
     assert!(price > 0.0);
     Ok(())
 }
