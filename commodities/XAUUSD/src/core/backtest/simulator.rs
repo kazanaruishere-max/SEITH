@@ -302,8 +302,8 @@ impl BacktestEngine {
         last_return / std_dev
     }
 
-    /// Dedicated OFS: s_delta from volume imbalance, s_cvd rolling cum,
-    /// s_dom from limit order depth asymmetry proxy
+    /// Dedicated OFS: s_delta from volume imbalance, s_cvd from tick-level
+    /// cumulative volume delta (Dukascopy), s_dom from volume asymmetry proxy.
     fn compute_ofs_dedicated(
         &self,
         m15: &[M1Candle],
@@ -344,11 +344,33 @@ impl BacktestEngine {
             0
         };
 
-        // s_cvd: cumulative delta check — rolling across recent M15 bars
-        // Simplified: mimic cumulative pressure from direction persistence
-        let s_cvd = s_delta; // correlated in absence of tick-level order data
+        // s_cvd: cumulative delta from tick-level Dukascopy data.
+        // If CVD data available, use it directly. Otherwise, fall back to s_delta.
+        let s_cvd = if let Some(cvd_val) = self.get_m15_cvd(m15) {
+            // Normalize CVD to -1/0/+1 score
+            if cvd_val > 5 {
+                1
+            } else if cvd_val < -5 {
+                -1
+            } else {
+                0
+            }
+        } else {
+            // Fallback when CVD data unavailable
+            s_delta
+        };
 
         filter4_orderflow::calculate_ofs(s_delta, s_cvd, s_dom)
+    }
+
+    /// Get average CVD across M15 bars from tick-level data.
+    fn get_m15_cvd(&self, m15: &[M1Candle]) -> Option<i32> {
+        let cvd_vals: Vec<i32> = m15.iter().filter_map(|c| c.cvd).collect();
+        if cvd_vals.is_empty() {
+            return None;
+        }
+        // Use the last CVD value in the M15 window (cumulative delta)
+        Some(cvd_vals[cvd_vals.len() - 1])
     }
 
     fn compute_bayesian(
