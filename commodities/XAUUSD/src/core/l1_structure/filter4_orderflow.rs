@@ -3,7 +3,17 @@
 // -1, 0, +1 → BLOCK (retail noise)
 // ≥ +2 atau ≤ -2 → PASS (institutional valid)
 
-pub const OFS_MIN_VALID: i32 = 2;
+use std::sync::OnceLock;
+
+fn ofs_min_valid() -> i32 {
+    static V: OnceLock<i32> = OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("BT_OFS_MIN")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2)
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OfsDecision {
@@ -22,7 +32,7 @@ pub struct OfsResult {
 
 pub fn calculate_ofs(s_delta: i32, s_cvd: i32, s_dom: i32) -> OfsResult {
     let total = s_delta + s_cvd + s_dom;
-    let decision = if total.abs() >= OFS_MIN_VALID {
+    let decision = if total.abs() >= ofs_min_valid() {
         OfsDecision::PassInstitutional
     } else {
         OfsDecision::BlockRetailNoise

@@ -2,8 +2,28 @@
 // GVZ Z-Score > +1.0 → HIGH VOL: FRAMA Trend Rider
 // GVZ Z-Score ≤ +1.0 → LOW VOL: AMT Volume Profile + VWAP
 
-pub const GVZ_ZSCORE_THRESHOLD: f64 = 1.0;
-pub const FRAMA_DEVIATION_MAX: f64 = 0.5;
+use std::sync::OnceLock;
+
+fn gvz_zscore_threshold() -> f64 {
+    static V: OnceLock<f64> = OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("BT_GVZ_THR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0)
+    })
+}
+
+fn frama_deviation_max() -> f64 {
+    static V: OnceLock<f64> = OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("BT_FRAMA_DEV")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.5)
+    })
+}
+
 pub const POC_MAGNET_PIPS: f64 = 5.0;
 pub const VWAP_BAND_EXTREME: f64 = 2.5;
 
@@ -29,7 +49,7 @@ pub struct CompassResult {
 }
 
 pub fn determine_regime(gvz_zscore: f64) -> VolatilityRegime {
-    if gvz_zscore > GVZ_ZSCORE_THRESHOLD {
+    if gvz_zscore > gvz_zscore_threshold() {
         VolatilityRegime::HighVol
     } else {
         VolatilityRegime::LowVol
@@ -37,7 +57,7 @@ pub fn determine_regime(gvz_zscore: f64) -> VolatilityRegime {
 }
 
 pub fn evaluate_frama(frama_deviation: f64) -> CompassDecision {
-    if frama_deviation.abs() <= FRAMA_DEVIATION_MAX {
+    if frama_deviation.abs() <= frama_deviation_max() {
         CompassDecision::Pass
     } else {
         CompassDecision::BlockFomo

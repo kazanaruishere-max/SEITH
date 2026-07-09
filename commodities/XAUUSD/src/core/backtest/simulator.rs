@@ -191,9 +191,17 @@ impl BacktestEngine {
             frama_val,
             _volume,
         );
-        if prob >= 0.75 {
+        let t2: f64 = std::env::var("BT_TIER2_THR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.60);
+        let t1: f64 = std::env::var("BT_TIER1_THR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.75);
+        if prob >= t1 {
             BayesianDecision::Tier1Institutional
-        } else if prob >= 0.60 {
+        } else if prob >= t2 {
             BayesianDecision::Tier2Tactical
         } else {
             BayesianDecision::Block

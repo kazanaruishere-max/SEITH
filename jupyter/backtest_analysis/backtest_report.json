@@ -1,15 +1,15 @@
 {
-  "total_trades": 134,
-  "wins": 77,
-  "losses": 57,
-  "win_rate": 57.46268656716418,
-  "net_pips": 1.309,
-  "profit_factor": 1.46,
-  "max_consecutive_wins": 7,
-  "max_consecutive_losses": 5,
-  "max_drawdown_pct": 247.91,
+  "total_trades": 36,
+  "wins": 17,
+  "losses": 19,
+  "win_rate": 47.22222222222222,
+  "net_pips": 0.435,
+  "profit_factor": 1.51,
+  "max_consecutive_wins": 3,
+  "max_consecutive_losses": 6,
+  "max_drawdown_pct": 1061.9,
   "avg_spread": 0.5,
   "avg_slippage": 0.001,
-  "final_balance": 10000.13,
-  "pnl": 0.13
+  "final_balance": 10000.04,
+  "pnl": 0.04
 }

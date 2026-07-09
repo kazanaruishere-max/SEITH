@@ -1,6 +1,25 @@
 // Filter 1 — Bayesian Gatekeeper
 // P(A|B) = (P(B|A) × P(A)) / P(B)
-// < 60% → BLOCK | 60-74% → TIER 2 | ≥ 75% → TIER 1
+// < tier2_thr → BLOCK | tier2_thr~tier1_thr → TIER 2 | ≥ tier1_thr → TIER 1
+
+use std::sync::OnceLock;
+
+fn read_env_f64(key: &str, default: f64) -> f64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
+fn tier2_thr() -> f64 {
+    static V: OnceLock<f64> = OnceLock::new();
+    *V.get_or_init(|| read_env_f64("BT_TIER2_THR", 0.60))
+}
+
+fn tier1_thr() -> f64 {
+    static V: OnceLock<f64> = OnceLock::new();
+    *V.get_or_init(|| read_env_f64("BT_TIER1_THR", 0.75))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BayesianDecision {
@@ -23,9 +42,11 @@ pub fn calculate_posterior(prior: f64, likelihood: f64, evidence: f64) -> f64 {
 }
 
 pub fn evaluate_bayesian(posterior: f64) -> BayesianResult {
-    let decision = if posterior < 0.60 {
+    let t2 = tier2_thr();
+    let t1 = tier1_thr();
+    let decision = if posterior < t2 {
         BayesianDecision::Block
-    } else if posterior < 0.75 {
+    } else if posterior < t1 {
         BayesianDecision::Tier2Tactical
     } else {
         BayesianDecision::Tier1Institutional
