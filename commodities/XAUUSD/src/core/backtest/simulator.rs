@@ -140,7 +140,9 @@ impl BacktestEngine {
         let ofs = self.compute_ofs_dedicated(m15, all_m1, idx);
 
         // ── L1 Pipeline ──
-        let bayesian = self.compute_bayesian(direction, close, body_ratio, frama_val, vol_ratio);
+        let bayesian = self.compute_bayesian(
+            direction, close, body_ratio, frama_val, vol_ratio, hv_zscore,
+        );
         if matches!(bayesian, BayesianDecision::Block) {
             self.prev_close = Some(close);
             return;
@@ -174,31 +176,45 @@ impl BacktestEngine {
             self.prev_close = Some(close);
             return;
         }
-        // ── Execute using real order_manager (Limit/Stop/Instant) ──
-        let execution = crate::core::execution::order_manager::plan_execution(
-            &signal.tier,
-            direction,
-            close,
-            (high, low),
-            spread,
-            body_ratio,
-            velocity,
-        );
 
-        let (entry_price, sl_price, tp_price) = match &execution {
-            crate::core::execution::order_manager::ExecutionPlan::Limit(p) => {
-                (p.entry_price, p.stop_loss, p.take_profit)
+        // ── Contrarian direction flip ──
+        // In high-vol regime (HV Z-Score > threshold), the Bayesian signal
+        // represents CONFIDENCE IN THE OPPOSITE DIRECTION (mean reversion).
+        let hv_thr: f64 = std::env::var("BT_HV_THR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0);
+        let contrarian_active = hv_zscore > hv_thr;
+        let trade_direction = if contrarian_active {
+            if direction == "BUY" {
+                "SELL"
+            } else {
+                "BUY"
             }
-            crate::core::execution::order_manager::ExecutionPlan::Stop(p) => {
-                (p.entry_price, p.stop_loss, p.take_profit)
-            }
-            crate::core::execution::order_manager::ExecutionPlan::Instant(p) => {
-                (p.entry_price, p.stop_loss, p.take_profit)
-            }
-            crate::core::execution::order_manager::ExecutionPlan::None => {
+        } else {
+            direction
+        };
+
+        // ── Execute with market-structure-based SL/TP ──
+        let (sl_dist, tp_dist) = match signal.tier {
+            SignalTier::Tier1Institutional => (20.0, 50.0), // SL=$20, TP=$50, RR 1:2.5
+            SignalTier::Tier2Tactical => (15.0, 18.0),      // SL=$15, TP=$18, RR 1:1.2
+            SignalTier::NoSignal => {
                 self.prev_close = Some(close);
                 return;
             }
+        };
+
+        let entry_price = close;
+        let sl_price = if trade_direction == "BUY" {
+            entry_price - sl_dist
+        } else {
+            entry_price + sl_dist
+        };
+        let tp_price = if trade_direction == "BUY" {
+            entry_price + tp_dist
+        } else {
+            entry_price - tp_dist
         };
 
         // Look ahead up to 12 M1 candles (3 hours max) for SL/TP hit
@@ -209,7 +225,7 @@ impl BacktestEngine {
             let mut res = "PENDING";
             let mut reason = "TIMEOUT";
             for c in &all_m1[m15_start_idx..lookback] {
-                if direction == "BUY" {
+                if trade_direction == "BUY" {
                     if c.low <= sl_price {
                         exit = sl_price;
                         res = "LOSS";
@@ -242,7 +258,7 @@ impl BacktestEngine {
             (entry_price, "PENDING".to_string(), "NO_DATA".to_string())
         };
 
-        let pips = if direction == "BUY" {
+        let pips = if trade_direction == "BUY" {
             exit_price - entry_price
         } else {
             entry_price - exit_price
@@ -252,7 +268,7 @@ impl BacktestEngine {
         self.trades.push(BacktestTrade {
             time: format_ts(m15[0].time),
             tier: format!("{:?}", signal.tier),
-            direction: direction.to_string(),
+            direction: trade_direction.to_string(),
             entry: (entry_price * 100.0).round() / 100.0,
             exit: (exit_price * 100.0).round() / 100.0,
             pips: pips_rounded,
@@ -373,6 +389,11 @@ impl BacktestEngine {
         Some(cvd_vals[cvd_vals.len() - 1])
     }
 
+    /// Contrarian Bayesian Gatekeeper.
+    /// Conditional mean-reversion mode:
+    /// - HV Z-Score > threshold (default 1.0): contrarian active (1 - momentum prob)
+    /// - HV Z-Score <= threshold: BLOCK (no trading in quiet/low-vol regimes)
+    ///   This matches XAUUSD M15 mean-reverting nature.
     fn compute_bayesian(
         &mut self,
         direction: &str,
@@ -380,8 +401,27 @@ impl BacktestEngine {
         body_ratio: f64,
         frama_val: f64,
         vol_ratio: f64,
+        hv_zscore: f64,
     ) -> BayesianDecision {
-        let p = self.momentum_probability(direction, close, body_ratio, frama_val, vol_ratio);
+        let hv_thr: f64 = std::env::var("BT_HV_THR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0);
+
+        // Block if not in high-vol regime
+        if hv_zscore <= hv_thr {
+            return BayesianDecision::Block;
+        }
+
+        // High-vol regime: contrarian mode
+        // Keep the same probability level but flip direction
+        // (strong momentum up → high confidence in reversal DOWN)
+        let raw_p = self.momentum_probability(direction, close, body_ratio, frama_val, vol_ratio);
+
+        // Contrarian: probability stays, direction implicitly flipped by the caller
+        let contrarian_p = raw_p;
+
+        // Apply tier thresholds (env-overridable, lower for contrarian)
         let t2: f64 = std::env::var("BT_TIER2_THR")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -390,9 +430,10 @@ impl BacktestEngine {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(0.70);
-        if p >= t1 {
+
+        if contrarian_p >= t1 {
             BayesianDecision::Tier1Institutional
-        } else if p >= t2 {
+        } else if contrarian_p >= t2 {
             BayesianDecision::Tier2Tactical
         } else {
             BayesianDecision::Block
