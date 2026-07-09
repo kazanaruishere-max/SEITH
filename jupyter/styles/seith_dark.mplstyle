@@ -1,0 +1,98 @@
+## AI SEITH Dark Trading Theme
+## Professional dark background with gold accent for XAUUSD analysis
+##
+## Use: plt.style.use('jupyter/styles/seith_dark.mplstyle')
+
+# Figure
+figure.facecolor: #0d1117
+figure.edgecolor: #0d1117
+figure.figsize: 14, 7
+figure.dpi: 120
+figure.titlesize: 20
+figure.titleweight: bold
+figure.autolayout: True
+
+# Axes
+axes.facecolor: #161b22
+axes.edgecolor: #30363d
+axes.labelcolor: #c9d1d9
+axes.labelsize: 12
+axes.labelweight: normal
+axes.titlecolor: #ffd700
+axes.titlesize: 16
+axes.titleweight: bold
+axes.grid: True
+axes.grid.axis: y
+axes.grid.which: major
+axes.spines.right: False
+axes.spines.top: False
+axes.prop_cycle: cycler(color=['#ffd700', '#00c853', '#00bcd4', '#7c4dff', '#ff6d00', '#ff1744', '#1de9b6', '#e040fb'])
+
+# Grid
+grid.color: #21262d
+grid.alpha: 0.6
+grid.linewidth: 0.5
+grid.linestyle: --
+
+# Legend
+legend.facecolor: #161b22
+legend.edgecolor: #30363d
+legend.labelcolor: #c9d1d9
+legend.fancybox: False
+legend.fontsize: 11
+legend.framealpha: 0.9
+
+# Lines
+lines.linewidth: 1.8
+lines.markersize: 6
+lines.solid_capstyle: round
+lines.antialiased: True
+
+# Patches
+patch.facecolor: #ffd700
+patch.edgecolor: #0d1117
+patch.antialiased: True
+
+# Tick
+xtick.color: #8b949e
+ytick.color: #8b949e
+xtick.labelsize: 11
+ytick.labelsize: 11
+xtick.direction: out
+ytick.direction: out
+xtick.major.size: 4
+ytick.major.size: 4
+
+# Text
+text.color: #c9d1d9
+
+# Histogram
+hist.color: #ffd700
+hist.edgecolor: #0d1117
+
+# Scatter
+scatter.edgecolors: white
+
+# Errorbar
+errorbar.capsize: 3
+
+# Boxplot
+boxplot.boxprops.color: #58a6ff
+boxplot.whiskerprops.color: #58a6ff
+boxplot.capprops.color: #58a6ff
+boxplot.medianprops.color: #ffd700
+boxplot.flierprops.color: #ff1744
+boxplot.flierprops.marker: o
+boxplot.flierprops.markersize: 4
+
+# Saving
+savefig.facecolor: #0d1117
+savefig.edgecolor: #0d1117
+savefig.dpi: 200
+savefig.bbox: tight
+
+# Date
+date.autoformatter.year: %Y
+date.autoformatter.month: %Y-%m
+date.autoformatter.day: %m-%d
+date.autoformatter.hour: %H:%M
