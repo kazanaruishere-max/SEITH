@@ -174,29 +174,31 @@ impl BacktestEngine {
             self.prev_close = Some(close);
             return;
         }
+        // ── Execute using real order_manager (Limit/Stop/Instant) ──
+        let execution = crate::core::execution::order_manager::plan_execution(
+            &signal.tier,
+            direction,
+            close,
+            (high, low),
+            spread,
+            body_ratio,
+            velocity,
+        );
 
-        // ── Execute with proper SL/TP ──
-        // XAUUSD.sml M15 typical range ~$10. SL at 2x range to avoid noise
-        let (sl_dist, tp_dist) = match signal.tier {
-            SignalTier::Tier1Institutional => (20.0, 50.0), // SL=$20, TP=$50 (RR 1:2.5)
-            SignalTier::Tier2Tactical => (20.0, 24.0),      // SL=$20, TP=$24 (RR 1:1.2)
-            SignalTier::NoSignal => {
+        let (entry_price, sl_price, tp_price) = match &execution {
+            crate::core::execution::order_manager::ExecutionPlan::Limit(p) => {
+                (p.entry_price, p.stop_loss, p.take_profit)
+            }
+            crate::core::execution::order_manager::ExecutionPlan::Stop(p) => {
+                (p.entry_price, p.stop_loss, p.take_profit)
+            }
+            crate::core::execution::order_manager::ExecutionPlan::Instant(p) => {
+                (p.entry_price, p.stop_loss, p.take_profit)
+            }
+            crate::core::execution::order_manager::ExecutionPlan::None => {
                 self.prev_close = Some(close);
                 return;
             }
-        };
-
-        // Find if SL or TP is hit first in subsequent M1 candles
-        let entry_price = close;
-        let sl_price = if direction == "BUY" {
-            entry_price - sl_dist
-        } else {
-            entry_price + sl_dist
-        };
-        let tp_price = if direction == "BUY" {
-            entry_price + tp_dist
-        } else {
-            entry_price - tp_dist
         };
 
         // Look ahead up to 12 M1 candles (3 hours max) for SL/TP hit

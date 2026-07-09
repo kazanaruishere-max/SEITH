@@ -1,5 +1,5 @@
 // S_DOM — Depth of Market Heatmap Z-Score
-// Updated to use DomSnapshot from L0 infra
+// Updated with real DOM cache support for live pipeline
 
 use crate::core::l0_infra::DomSnapshot;
 
@@ -10,11 +10,13 @@ pub struct DomResult {
     pub heatmap_score: i32,
 }
 
-/// Calculate DOM score from a live DomSnapshot.
-pub fn calculate_dom_from_snapshot(snapshot: &DomSnapshot) -> DomResult {
-    let bid_sum = snapshot.total_bid_volume() as f64;
-    let ask_sum = snapshot.total_ask_volume() as f64;
-    let total = bid_sum + ask_sum;
+/// Calculate S_DOM from live DomSnapshot (real OANDA DOM data).
+/// Uses limit order book depth asymmetry between bids and asks.
+pub fn calculate_s_dom_from_snapshot(snapshot: &DomSnapshot) -> DomResult {
+    let bid_vol: f64 = snapshot.bids.iter().map(|l| l.volume as f64).sum();
+    let ask_vol: f64 = snapshot.asks.iter().map(|l| l.volume as f64).sum();
+    let total = bid_vol + ask_vol;
+
     if total == 0.0 {
         return DomResult {
             imbalance: 0.0,
@@ -23,7 +25,7 @@ pub fn calculate_dom_from_snapshot(snapshot: &DomSnapshot) -> DomResult {
         };
     }
 
-    let imbalance = (bid_sum - ask_sum) / total;
+    let imbalance = (bid_vol - ask_vol) / total;
     let z_score = imbalance * 5.0;
     let heatmap_score = if z_score > 1.0 {
         1
@@ -39,7 +41,7 @@ pub fn calculate_dom_from_snapshot(snapshot: &DomSnapshot) -> DomResult {
     }
 }
 
-/// Legacy: calculate from raw volume slices (kept for backward compat).
+/// Calculate from raw volume slices (backward compat, used in backtest).
 pub fn calculate_dom(bid_volume: &[f64], ask_volume: &[f64]) -> DomResult {
     let bid_sum: f64 = bid_volume.iter().sum();
     let ask_sum: f64 = ask_volume.iter().sum();
@@ -51,7 +53,6 @@ pub fn calculate_dom(bid_volume: &[f64], ask_volume: &[f64]) -> DomResult {
             heatmap_score: 0,
         };
     }
-
     let imbalance = (bid_sum - ask_sum) / total;
     let z_score = imbalance * 5.0;
     let heatmap_score = if z_score > 1.0 {
@@ -77,11 +78,11 @@ mod tests {
         DomSnapshot::new(
             "XAUUSD.sml",
             vec![DomLevel {
-                price: 100.0,
+                price: 4100.0,
                 volume: bid_vol,
             }],
             vec![DomLevel {
-                price: 101.0,
+                price: 4101.0,
                 volume: ask_vol,
             }],
             3.5,
@@ -91,7 +92,7 @@ mod tests {
     #[test]
     fn test_bid_dominated() {
         let snap = sample_snapshot(200, 50);
-        let r = calculate_dom_from_snapshot(&snap);
+        let r = calculate_s_dom_from_snapshot(&snap);
         assert!(r.imbalance > 0.0);
         assert_eq!(r.heatmap_score, 1);
     }
@@ -99,7 +100,7 @@ mod tests {
     #[test]
     fn test_ask_dominated() {
         let snap = sample_snapshot(10, 200);
-        let r = calculate_dom_from_snapshot(&snap);
+        let r = calculate_s_dom_from_snapshot(&snap);
         assert!(r.imbalance < 0.0);
         assert_eq!(r.heatmap_score, -1);
     }
@@ -107,7 +108,7 @@ mod tests {
     #[test]
     fn test_zero_volume() {
         let snap = sample_snapshot(0, 0);
-        let r = calculate_dom_from_snapshot(&snap);
+        let r = calculate_s_dom_from_snapshot(&snap);
         assert_eq!(r.heatmap_score, 0);
     }
 

@@ -1,6 +1,6 @@
 // L3 - AI Global Event Loop
 // Orchestrates L0 → L3 → L2 → L1 → Execution pipeline per M1/M15 tick
-// Now with live MT5 data: tick + DOM polling
+// Uses real DOM data for S_DOM and order_manager for execution
 
 use std::time::Duration;
 use tokio::time::interval;
@@ -137,14 +137,41 @@ impl EventLoop {
         let spread = self.data_feed.spread();
         let price = self.data_feed.last_price();
 
+        // S_DOM from real DOM data
+        let s_dom_score = if let Some(dom) = self.data_feed.dom() {
+            let bids: Vec<crate::core::l0_infra::DomLevel> = dom
+                .bids
+                .iter()
+                .map(|l| crate::core::l0_infra::DomLevel {
+                    price: l.price,
+                    volume: l.volume,
+                })
+                .collect();
+            let asks: Vec<crate::core::l0_infra::DomLevel> = dom
+                .asks
+                .iter()
+                .map(|l| crate::core::l0_infra::DomLevel {
+                    price: l.price,
+                    volume: l.volume,
+                })
+                .collect();
+            let snapshot = crate::core::l0_infra::DomSnapshot::new(&self.symbol, bids, asks, 3.5);
+            let dom_result =
+                crate::indicators::orderflow::s_dom::calculate_s_dom_from_snapshot(&snapshot);
+            dom_result.heatmap_score
+        } else {
+            0
+        };
+
         log::info!(
-            "L1 pipeline: price={:.3} spread={:.3} dom={}",
+            "L1 pipeline: price={:.3} spread={:.3} dom={} s_dom={}",
             price,
             spread,
             self.data_feed
                 .dom()
                 .map(|d| d.asks.len() + d.bids.len())
                 .unwrap_or(0),
+            s_dom_score,
         );
 
         // TODO: Full L1 → Execution pipeline from live data
