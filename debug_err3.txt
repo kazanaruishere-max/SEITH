@@ -1,1 +1,0 @@
-Warning: .env not loaded: Error parsing line: '"C:\Program Files\OANDA Global MetaTrader 5 Terminal\terminal64.exe"', error at line index: 4
