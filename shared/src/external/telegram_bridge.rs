@@ -165,11 +165,8 @@ pub async fn send_signal(
     )
     .await;
 
-    // Send photo with signal as caption
+    // Send photo with signal as caption (HANYA 1X — no duplicate text)
     let _ = send_photo(chart_str, &text).await;
-
-    // Also send plain text as fallback
-    let _ = send_message(&text).await;
 
     Ok(())
 }

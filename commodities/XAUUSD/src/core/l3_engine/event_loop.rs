@@ -128,8 +128,8 @@ impl EventLoop {
         if has_news {
             self.state.set_state(TradingState::NewsAnomalyMode);
             log::info!("News anomaly detected — no trades during news");
-        } else if is_m15 {
-            self.state.set_state(TradingState::NormalRegulerMode);
+        } else if is_m1 {
+            // Strategy runs every 60s (not just M15) — HV can spike anytime
             self.run_strategy(now).await;
         }
     }
@@ -213,9 +213,14 @@ impl EventLoop {
         // ── 1. Risk Check ──
         let price = self.data_feed.last_price();
         if price <= 0.0 {
+            log::info!("[STRATEGY] No price data yet");
             return;
         }
         if self.prices.len() < 2 {
+            log::info!(
+                "[STRATEGY] Building price buffer ({}/10)",
+                self.prices.len()
+            );
             return;
         }
 
@@ -230,13 +235,22 @@ impl EventLoop {
         if let Err(e) =
             crate::core::execution::risk_manager::can_trade(&session_state, &limits, spread, price)
         {
-            log::warn!("Risk check failed: {}", e);
+            log::warn!("[STRATEGY] Risk check failed: {}", e);
             return;
         }
 
         let hv = self.compute_hv_zscore();
+        log::info!(
+            "[STRATEGY] HV Z-Score = {:.3} (threshold {:.1})",
+            hv,
+            HV_THRESHOLD
+        );
         if hv <= HV_THRESHOLD {
-            log::debug!("HV Z-Score {:.2} <= {:.1}, no trade", hv, HV_THRESHOLD);
+            log::info!(
+                "[STRATEGY] HV {:.3} <= {:.1} -> SKIP (no trade)",
+                hv,
+                HV_THRESHOLD
+            );
             return;
         }
 
