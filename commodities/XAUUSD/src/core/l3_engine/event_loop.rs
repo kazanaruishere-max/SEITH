@@ -15,7 +15,7 @@ use shared::external::news_aggregator;
 const TICK_INTERVAL_SECS: u64 = 15;
 const TICK_M1: u64 = 60;
 const TICK_M15: u64 = 900;
-const TRADE_HOURS: &[u32] = &[5, 12, 19]; // UTC
+const TRADE_HOURS: &[u32] = &[8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]; // UTC — London/NY session
 const HV_THRESHOLD: f64 = 0.5;
 const STOP_LOSS: f64 = 3.0;
 const TAKE_PROFIT: f64 = 4.50;
