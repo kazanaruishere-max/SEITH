@@ -160,13 +160,13 @@ impl EventLoop {
         }
     }
 
-    /// Compute HV Z-Score from last 20 M15 periods
+    /// Compute HV Z-Score from recent price movements
     fn compute_hv_zscore(&self) -> f64 {
         let n = self.prices.len();
-        if n < 21 {
+        if n < 10 {
             return 0.0;
         }
-        let window = &self.prices[n - 21..];
+        let window = &self.prices[n.saturating_sub(10)..];
         let returns: Vec<f64> = window
             .windows(2)
             .map(|w| (w[1] - w[0]) / w[0].abs().max(0.001))

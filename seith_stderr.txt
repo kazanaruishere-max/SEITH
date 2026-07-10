@@ -26,3 +26,7 @@
 [2026-07-10T14:09:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
 [2026-07-10T14:10:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
 [2026-07-10T14:11:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:12:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:13:13Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:14:13Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:15:13Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
