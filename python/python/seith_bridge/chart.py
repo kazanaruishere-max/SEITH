@@ -1,32 +1,37 @@
-"""AI SEITH Signal Chart Generator — Candlestick chart with entry/SL/TP."""
+"""AI SEITH Signal Chart Generator — Candlestick chart with entry/SL/TP.
+Uses mplfinance for professional candlestick rendering.
+"""
 
-import os
+import os, io
 import pandas as pd
 import matplotlib
-matplotlib.use("Agg")  # non-interactive backend
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import mplfinance as mpf
 
-# Dark theme matching Jupyter seith_dark style
-plt.style.use("dark_background")
-plt.rcParams.update({
-    "figure.facecolor": "#0d1117",
-    "axes.facecolor": "#161b22",
-    "axes.edgecolor": "#30363d",
-    "axes.labelcolor": "#c9d1d9",
-    "text.color": "#c9d1d9",
-    "axes.titlecolor": "#ffd700",
-    "xtick.color": "#8b949e",
-    "ytick.color": "#8b949e",
-    "grid.color": "#21262d",
-    "grid.alpha": 0.3,
-    "font.size": 9,
-})
-
+DARK_BG = "#0d1117"
+CARD_BG = "#161b22"
 GOLD = "#ffd700"
 GREEN = "#00c853"
 RED = "#ff1744"
 CYAN = "#00bcd4"
+WHITE = "#c9d1d9"
+
+mpf_style = mpf.make_mpf_style(
+    base_mpf_style="charles",
+    marketcolors=mpf.make_marketcolors(
+        up=GREEN, down=RED, edge={"up": GREEN, "down": RED},
+        wick={"up": "#00e676", "down": "#ff5252"},
+        volume={"up": GREEN, "down": RED},
+    ),
+    facecolor=DARK_BG,
+    figcolor=DARK_BG,
+    edgecolor="#30363d",
+    gridcolor="#21262d",
+    gridstyle="--",
+    gridaxis="both",
+    y_on_right=False,
+)
 
 
 def generate_chart(
@@ -38,7 +43,7 @@ def generate_chart(
     direction: str = "BUY",
     output_path: str = None,
 ) -> str:
-    """Generate candlestick chart with entry/SL/TP lines."""
+    """Generate professional candlestick chart with entry/SL/TP lines."""
     if output_path is None:
         output_path = os.path.join(
             os.environ.get("TEMP", "/tmp"),
@@ -46,71 +51,57 @@ def generate_chart(
         )
 
     if len(prices) < 10:
-        return _generate_fallback_chart(entry_price, sl_price, tp1_price, direction, output_path)
+        return _fallback_chart(entry_price, sl_price, tp1_price, direction, output_path)
 
-    # Build OHLCV from tick data (aggregate into 1-min candles)
+    # Build OHLCV candles from tick data
     df = _build_candles(prices, 60)
-
     if df is None or df.empty:
-        return _generate_fallback_chart(entry_price, sl_price, tp1_price, direction, output_path)
+        return _fallback_chart(entry_price, sl_price, tp1_price, direction, output_path)
 
-    # Take last 30 candles for clarity
-    n_candles = min(30, len(df))
-    df = df.iloc[-n_candles:]
+    n = min(30, len(df))
+    df = df.iloc[-n:]
 
-    fig, ax = plt.subplots(figsize=(12, 7))
+    # ── Generate candlestick chart with mplfinance ──
+    fig, axes = mpf.plot(
+        df,
+        type="candle",
+        style=mpf_style,
+        figsize=(12, 7),
+        returnfig=True,
+        title=f"{direction} SIGNAL — XAUUSD.sml",
+        ylabel="Price",
+        xrotation=0,
+        datetime_format="%H:%M",
+        tight_layout=True,
+        savefig=dict(fname=output_path, dpi=200, bbox_inches="tight", pad_inches=0.3),
+    )
 
-    # ── Candlesticks — bold & clear ──
-    width = 0.8 * (df.index[1] - df.index[0]).total_seconds() / 86400 if len(df) > 1 else 0.001
-    up = df[df["close"] >= df["open"]]
-    down = df[df["close"] < df["open"]]
+    # ── Add entry/SL/TP lines to the main axis ──
+    ax = axes[0]
 
-    for subset, color, wick_color in [(up, GREEN, "#00e676"), (down, RED, "#ff5252")]:
-        if subset.empty:
-            continue
-        ax.bar(
-            subset.index, subset["close"] - subset["open"], width, bottom=subset["open"],
-            color=color, edgecolor=color, linewidth=0.8, alpha=1.0,
-        )
-        ax.vlines(
-            subset.index, subset["low"], subset["high"],
-            color=wick_color, linewidth=0.8, alpha=0.9,
-        )
+    # Entry zone
+    zone_w = abs(entry_price * 0.0003)
+    ax.axhspan(entry_price - zone_w, entry_price + zone_w, color=CYAN, alpha=0.12, zorder=2)
+    ax.axhline(entry_price, color=CYAN, linewidth=2, linestyle="-", alpha=0.9, label=f"Entry {entry_price:.3f}")
 
-    # ── Entry Zone (shaded area) ──
-    zone_width = abs(entry_price * 0.0003)
-    zone_top = entry_price + zone_width
-    zone_bottom = entry_price - zone_width
-    ax.axhspan(zone_bottom, zone_top, color=CYAN, alpha=0.15, zorder=2)
-    ax.axhline(entry_price, color=CYAN, linewidth=2.0, linestyle="-", alpha=0.9, label=f"Entry {entry_price:.3f}")
-
-    # ── Stop Loss ──
+    # Stop Loss
     ax.axhline(sl_price, color=RED, linewidth=1.5, linestyle="--", alpha=0.8, label=f"SL {sl_price:.3f}")
 
-    # ── Take Profit ──
+    # Take Profit
     ax.axhline(tp1_price, color=GOLD, linewidth=1.5, linestyle="--", alpha=0.8, label=f"TP1 {tp1_price:.3f}")
     if tp2_price:
         ax.axhline(tp2_price, color=GREEN, linewidth=1.2, linestyle=":", alpha=0.6, label=f"TP2 {tp2_price:.3f}")
 
-    # ── Styling ──
-    ax.set_title(f"{direction} SIGNAL — XAUUSD.sml", color=GOLD, fontsize=14, fontweight="bold", pad=12)
-    ax.set_xlabel("Time (UTC)", color=WHITE)
-    ax.set_ylabel("Price", color=WHITE)
-    ax.legend(loc="best", fontsize=9, facecolor="#161b22", edgecolor="#30363d", labelcolor=WHITE)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-    ax.tick_params(colors=WHITE, labelsize=10)
-    ax.grid(True, alpha=0.2)
-    for spine in ax.spines.values():
-        spine.set_color("#30363d")
+    ax.legend(loc="best", fontsize=9, facecolor=CARD_BG, edgecolor="#30363d", labelcolor=WHITE)
 
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=200, bbox_inches="tight", facecolor="#0d1117")
+    # Re-save with annotations
+    fig.savefig(output_path, dpi=200, bbox_inches="tight", facecolor=DARK_BG)
     plt.close(fig)
     return output_path
 
 
 def _build_candles(prices: list, seconds: int = 60):
-    """Aggregate tick data into OHLCV candles."""
+    """Aggregate tick data into OHLCV candles with proper volume."""
     if not prices:
         return None
     df = pd.DataFrame(prices, columns=["time", "bid", "ask"])
@@ -120,22 +111,20 @@ def _build_candles(prices: list, seconds: int = 60):
     ohlc = df["price"].resample(f"{seconds}S").ohlc()
     ohlc.columns = ["open", "high", "low", "close"]
     ohlc.dropna(inplace=True)
+    # Add fake volume for compat
+    ohlc["volume"] = 100
     return ohlc
 
 
-def _generate_fallback_chart(entry, sl, tp, direction, output_path):
-    """Generate minimal chart when price data is limited."""
+def _fallback_chart(entry, sl, tp, direction, output_path):
+    """Generate minimal text chart when price data is limited."""
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.set_facecolor("#161b22")
+    ax.set_facecolor(CARD_BG)
     ax.text(0.5, 0.5, f"{direction} SIGNAL\nEntry: {entry:.3f}\nSL: {sl:.3f}\nTP: {tp:.3f}",
             ha="center", va="center", fontsize=16, color=GOLD,
             transform=ax.transAxes, fontweight="bold")
     ax.set_title("XAUUSD.sml Signal (No Chart Data)", color=GOLD)
     ax.axis("off")
-    plt.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="#0d1117")
+    plt.savefig(output_path, dpi=200, bbox_inches="tight", facecolor=DARK_BG)
     plt.close(fig)
     return output_path
-
-
-# Fix missing WHITE reference
-WHITE = "#c9d1d9"
