@@ -403,12 +403,12 @@ impl EventLoop {
     }
 
     /// Scalable lot via Logistic S-Curve.
-    /// < 70% -> skip, 70% -> 0.01, 75% -> 0.03, 80%+ -> 0.05
+    /// < 65% -> skip, 65% -> 0.01, 70% -> 0.01, 75% -> 0.03, 80%+ -> 0.05
     fn calculate_scalable_lot(&self, confidence: f64) -> f64 {
-        if confidence < 70.0 {
+        if confidence < 65.0 {
             return 0.0;
         }
-        let norm = ((confidence - 70.0) / 10.0).clamp(0.0, 1.0);
+        let norm = ((confidence - 65.0) / 15.0).clamp(0.0, 1.0);
         let lot = 0.05 / (1.0 + std::f64::consts::E.powf(-6.0 * (norm - 0.5)));
         (lot * 100.0).round().max(1.0) / 100.0
     }
