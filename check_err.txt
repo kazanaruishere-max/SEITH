@@ -1,0 +1,38 @@
+    Checking shared v0.1.0 (C:\Users\Lenovo\PROJECT\AI SEITH\shared)
+error: incorrect unicode escape sequence
+   --> shared\src\external\telegram_bridge.rs:108:30
+    |
+108 |         "{emoji} AUTO-SIGNAL \u2014 XAUUSD.sml M15\n\
+    |                              ^^^
+    |
+help: format of unicode escape sequences uses braces
+    |
+108 -         "{emoji} AUTO-SIGNAL \u2014 XAUUSD.sml M15\n\
+108 +         "{emoji} AUTO-SIGNAL \u{2014} XAUUSD.sml M15\n\
+    |
+
+error: incorrect unicode escape sequence
+   --> shared\src\external\telegram_bridge.rs:113:50
+    |
+113 |         \u{1f3c6} TP1 : {tp1:.3} (1:{rr1:.1} RR) \u2014 {hit1:.0}% hit rate\n\
+    |                                                  ^^^
+    |
+help: format of unicode escape sequences uses braces
+    |
+113 -         \u{1f3c6} TP1 : {tp1:.3} (1:{rr1:.1} RR) \u2014 {hit1:.0}% hit rate\n\
+113 +         \u{1f3c6} TP1 : {tp1:.3} (1:{rr1:.1} RR) \u{2014} {hit1:.0}% hit rate\n\
+    |
+
+error: incorrect unicode escape sequence
+   --> shared\src\external\telegram_bridge.rs:136:56
+    |
+136 |             format!("\u{26a1} TP2 : {:.3} (1:{:.1} RR) \u2014 {:.0}% hit rate \u{1f680}\n", tp2, rr2, (confidence * 0.25).min(100.0))
+    |                                                        ^^^
+    |
+help: format of unicode escape sequences uses braces
+    |
+136 -             format!("\u{26a1} TP2 : {:.3} (1:{:.1} RR) \u2014 {:.0}% hit rate \u{1f680}\n", tp2, rr2, (confidence * 0.25).min(100.0))
+136 +             format!("\u{26a1} TP2 : {:.3} (1:{:.1} RR) \u{2014} {:.0}% hit rate \u{1f680}\n", tp2, rr2, (confidence * 0.25).min(100.0))
+    |
+
+error: could not compile `shared` (lib) due to 3 previous errors

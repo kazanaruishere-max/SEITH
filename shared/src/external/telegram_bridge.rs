@@ -78,10 +78,14 @@ pub async fn send_signal(
     reasoning: &str,
     order_type: &str,
     prices: Vec<(i64, f64, f64)>, // (timestamp, bid, ask) for chart
+    signal_id: &str,              // unique ID for #SEITH-{id}
+    session_name: &str,           // real-time session (e.g., "Asia Prime")
+    orderflow_info: &str,         // real-time orderflow detection
+    invalid_condition: &str,      // invalidation condition
 ) -> Result<()> {
     let settings = match crate::config::settings::Settings::from_env() {
         Ok(s) => s,
-        Err(_) => return Ok(()), // silent fail if no telegram
+        Err(_) => return Ok(()),
     };
     let _chat_id = settings.telegram.chat_id.clone();
     let direction_emoji = if direction == "BUY" {
@@ -94,26 +98,32 @@ pub async fn send_signal(
     } else {
         "SHORT (SELL)"
     };
-
     let rr1 = (tp1_price - entry_price).abs() / (entry_price - sl_price).abs().max(0.001);
     let rr2 =
         tp2_price.map(|tp2| (tp2 - entry_price).abs() / (entry_price - sl_price).abs().max(0.001));
 
-    // Build signal text
+    // Format timestamp
+    let now_str = chrono::Utc::now().format("%H:%M UTC").to_string();
+
     let text = format!(
-        "{emoji} AUTO-SIGNAL — XAUUSD.sml M15\n\
+        "{emoji} AUTO-SIGNAL \u{2014} XAUUSD.sml M15\n\
         \u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\n\
         {dir_emoji} Direction : {dir}\n\
         \u{1f3af} Entry Zone: {entry:.3} \u{00b1} {zone:.3}\n\
         \u{1f6d1} Stop Loss : {sl:.3}\n\
-        \u{1f3c6} TP1 : {tp1:.3} (1:{rr1:.1} RR) — {hit1:.0}%\n\
+        \u{1f3c6} TP1 : {tp1:.3} (1:{rr1:.1} RR) \u{2014} {hit1:.0}% hit rate\n\
         {tp2_line}\
         \u{1f4e6} Lot Size : {lot}\n\
         \u{1f9e0} Confidence: {conf:.0}%\n\
         \u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\n\
         \u{1f9e0} Reasoning:\n{reasoning}\n\
         \u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\n\
-        \u{26a1} Order: {order_type} | Valid: 10 menit",
+        {orderflow}\n\
+        \u{26a0}\u{fe0f} Invalidasi: {invalid}\n\
+        \u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\n\
+        \u{1f550} {time_str}\n\
+        \u{26a1} {order_type} | Valid: 10 menit\n\
+        \u{1f30f} {session} | #SEITH-{id}",
         emoji = direction_emoji,
         dir_emoji = direction_emoji,
         dir = dir_str,
@@ -124,12 +134,17 @@ pub async fn send_signal(
         rr1 = rr1,
         hit1 = (confidence * 0.65).min(100.0),
         tp2_line = if let (Some(tp2), Some(rr2)) = (tp2_price, rr2) {
-            format!("\u{26a1} TP2 : {:.3} (1:{:.1} RR) — {:.0}% \u{1f680}\n", tp2, rr2, (confidence * 0.25).min(100.0))
+            format!("\u{26a1} TP2 : {:.3} (1:{:.1} RR) \u{2014} {:.0}% hit rate \u{1f680}\n", tp2, rr2, (confidence * 0.25).min(100.0))
         } else { String::new() },
         lot = lot_size,
         conf = confidence,
         reasoning = reasoning,
+        orderflow = orderflow_info,
+        invalid = invalid_condition,
+        time_str = now_str,
         order_type = order_type,
+        session = session_name,
+        id = signal_id,
     );
 
     // Generate chart

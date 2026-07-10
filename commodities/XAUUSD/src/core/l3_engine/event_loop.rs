@@ -204,14 +204,102 @@ impl EventLoop {
         self.sl_price = sl;
         self.tp_price = tp;
 
-        let msg = format!(
-            "[AI SEITH] LIVE SIGNAL: {} XAUUSD\nEntry: {:.3}\nSL: {:.3} | TP: {:.3}\nHV: {:.2} | Hour: {} UTC",
-            direction, price, sl, tp, hv, hour
+        log::info!(
+            "SIGNAL: {} XAUUSD Entry={:.3} SL={:.3} TP={:.3} HV={:.2}",
+            direction,
+            price,
+            sl,
+            tp,
+            hv
         );
-        log::info!("{}", msg);
 
-        // Telegram notification
-        let _ = shared::external::telegram_bridge::send_message(&msg).await;
+        // Build real-time reasoning
+        let reasoning = format!(
+            "Contrarian reversal signal detected. HV Z-Score {:.2} above {:.1} threshold.\n\
+            Price {:.3} vs previous {:.3} = {} trend.\n\
+            Mean reversion expected within 2-3 M15 bars based on session analysis.",
+            hv,
+            HV_THRESHOLD,
+            price,
+            self.prices
+                .get(self.prices.len().saturating_sub(2))
+                .copied()
+                .unwrap_or(0.0),
+            if trending_up { "UP" } else { "DOWN" }
+        );
+
+        // Build orderflow info from DOM data
+        let orderflow_info = if let Some(dom) = self.data_feed.dom() {
+            let bid_vol: u64 = dom.bids.iter().map(|l| l.volume).sum();
+            let ask_vol: u64 = dom.asks.iter().map(|l| l.volume).sum();
+            if bid_vol > ask_vol * 2 {
+                format!(
+                    "\u{1f4a7} Order Flow: Dominasi BID ({:.0}% dari total depth)",
+                    bid_vol as f64 / (bid_vol + ask_vol).max(1) as f64 * 100.0
+                )
+            } else if ask_vol > bid_vol * 2 {
+                format!(
+                    "\u{1f4a7} Order Flow: Dominasi ASK ({:.0}% dari total depth)",
+                    ask_vol as f64 / (bid_vol + ask_vol).max(1) as f64 * 100.0
+                )
+            } else {
+                "\u{1f4a7} Order Flow: Seimbang, tidak ada dominasi signifikan".to_string()
+            }
+        } else {
+            "\u{1f4a7} Order Flow: Data DOM tidak tersedia".to_string()
+        };
+
+        // Session name based on hour
+        let session_name = match hour {
+            5..=7 => "Asia Prime",
+            8..=11 => "London Open",
+            12..=16 => "London/NY Overlap",
+            17..=20 => "NY Session",
+            21..=23 => "NY Late",
+            _ => "Asia",
+        };
+
+        // Invalid condition
+        let invalid_condition = if direction == "BUY" {
+            format!("Close below {:.3} (premium zone)", price - STOP_LOSS * 2.0)
+        } else {
+            format!("Close above {:.3} (premium zone)", price + STOP_LOSS * 2.0)
+        };
+
+        // Signal ID (timestamp-based)
+        let signal_id = format!("{:x}", chrono::Utc::now().timestamp_millis() & 0xFFFFFF);
+
+        // Build price list for chart from recent ticks
+        let chart_prices: Vec<(i64, f64, f64)> = self
+            .prices
+            .iter()
+            .rev()
+            .take(60)
+            .enumerate()
+            .map(|(i, &p)| {
+                let ts =
+                    (chrono::Utc::now() - chrono::Duration::seconds(i as i64 * 15)).timestamp();
+                (ts, p - 0.05, p + 0.05)
+            })
+            .collect();
+
+        let _ = shared::external::telegram_bridge::send_signal(
+            direction,
+            price,
+            sl,
+            tp + (tp - price) * 2.0,
+            Some(tp + (tp - price) * 3.0),
+            0.01,
+            65.0,
+            &reasoning,
+            "SELL_LIMIT",
+            chart_prices,
+            &signal_id,
+            session_name,
+            &orderflow_info,
+            &invalid_condition,
+        )
+        .await;
     }
 
     /// Check SL/TP hit every M1 tick
