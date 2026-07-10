@@ -28,7 +28,7 @@
                   └────┬────┘
                        │
                   ┌────┴────┐
-                  │  MT5 place_pending_limit (IOC Pending Order)
+                   │  MT5 place_pending_limit (Pending Order)
                   │  + Telegram send_signal()
                   └─────────┘
 ```
@@ -43,7 +43,7 @@
 **Isi:**
 ```rust
 /// Hanya pending order (BUY_LIMIT / SELL_LIMIT / BUY_STOP / SELL_STOP).
-/// TRADE_ACTION_PENDING — tanpa filling (IOC hanya untuk market order).
+/// TRADE_ACTION_PENDING + ORDER_FILLING_RETURN.
 pub async fn place_pending_limit(
     &self,
     order_type: &str,   // "BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"
@@ -98,6 +98,7 @@ def place_pending_order(
         "magic": 1001,
         "comment": comment,
         "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_RETURN,
     }
     result = mt5.order_send(request)
     if result.retcode != mt5.TRADE_RETCODE_DONE:
@@ -141,7 +142,7 @@ fn calculate_scalable_lot(confidence: f64) -> f64 {
     // Skip if confidence < 70% (noise filter untuk PF 4.0)
     if confidence < 70.0 { return 0.0; }
     // Logistic S-Curve: 70% -> 0.01, 75% -> 0.03, 80%+ -> 0.05
-    let norm = ((confidence - 70.0) / 25.0).clamp(0.0, 1.0);
+    let norm = ((confidence - 70.0) / 10.0).clamp(0.0, 1.0);
     let lot = 0.05 / (1.0 + std::f64::consts::E.powf(-6.0 * (norm - 0.5)));
     (lot * 100.0).round().max(1.0) / 100.0
 }
@@ -215,7 +216,7 @@ M15 Tick ──→ run_strategy()
     ┌────────────┴────────────┐
     │ MT5 EXECUTION           │
     │ place_pending_limit()   │──→ FAIL → log error
-    │ (IOC Pending Order)     │
+    │ (Pending Order)          │
     └────────────┬────────────┘
                  │
     ┌────────────┴────────────┐
