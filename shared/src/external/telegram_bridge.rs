@@ -32,32 +32,36 @@ pub async fn init_telegram() -> Result<()> {
 /// Send message to Telegram
 pub async fn send_message(text: &str) -> Result<()> {
     log::debug!("Sending Telegram message: {}", text);
-    let settings = crate::config::settings::Settings::from_env()?;
+    let settings = match crate::config::settings::Settings::from_env() {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("Telegram settings unavailable: {}", e);
+            return Ok(());
+        }
+    };
     let token = settings.telegram.bot_token.clone();
     let chat_id = settings.telegram.chat_id.clone();
     let text = text.to_string();
 
-    tokio::task::spawn_blocking(move || {
-        pyo3::Python::with_gil(|py| {
-            let tg = py.import("seith_bridge.telegram")?;
-            let token_py = token.into_py(py);
-            let chat_id_py = chat_id.into_py(py);
-            let text_py = text.into_py(py);
+    // Direct Python::with_gil instead of spawn_blocking to avoid
+    // deadlock with tokio runtime + PyO3 auto-initialize
+    let success: bool = pyo3::Python::with_gil(|py| {
+        let tg = py.import("seith_bridge.telegram")?;
+        let init_ok: bool = tg.call_method1("init_telegram", (token,))?.extract()?;
+        if !init_ok {
+            anyhow::bail!("Failed to re-initialize telegram bot");
+        }
+        let ok: bool = tg
+            .call_method1("send_message", (chat_id, text))?
+            .extract()?;
+        Ok::<_, anyhow::Error>(ok)
+    })?;
 
-            let init_ok: bool = tg.call_method1("init_telegram", (token_py,))?.extract()?;
-            if !init_ok {
-                anyhow::bail!("Failed to re-initialize telegram bot");
-            }
-            let success: bool = tg
-                .call_method1("send_message", (chat_id_py, text_py))?
-                .extract()?;
-            if !success {
-                anyhow::bail!("send_message returned false");
-            }
-            Ok::<(), anyhow::Error>(())
-        })
-    })
-    .await??;
+    if success {
+        log::info!("Telegram message sent");
+    } else {
+        log::warn!("Telegram send_message returned false");
+    }
 
     Ok(())
 }

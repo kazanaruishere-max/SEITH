@@ -1,0 +1,9 @@
+Debug: .env loaded successfully
+[2026-07-10T07:26:57Z INFO  xauusd] Starting XAUUSD.sml pipeline...
+[2026-07-10T07:26:57Z INFO  xauusd::core::l3_engine::state_manager] StateManager: initial state = NORMAL_REGULER_MODE
+[2026-07-10T07:26:57Z INFO  xauusd::core::l3_engine::event_loop] EventLoop started for XAUUSD.sml (interval=15s) — LIVE DRY-RUN MODE
+[2026-07-10T07:26:57Z INFO  xauusd::core::l3_engine::event_loop] Trade hours: [5, 12, 19] UTC | HV>0.5 | SL=$3 TP=$4.5
+[2026-07-10T07:26:57Z INFO  shared::external::mt5_bridge] MT5 connecting to XAUUSD.sml
+[2026-07-10T07:26:57Z INFO  shared::external::mt5_bridge] MT5 connected and authorized
+[2026-07-10T07:26:57Z INFO  xauusd::core::l3_engine::event_loop] MT5 connected successfully
+[Telegram] Bot initialized: @AISEITH_bot

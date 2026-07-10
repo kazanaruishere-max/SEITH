@@ -30,19 +30,19 @@ pub struct DatabaseSettings {
 impl Settings {
     /// Load settings from environment variables
     pub fn from_env() -> anyhow::Result<Self> {
-        env_loader::load_env()?;
-
+        // Env vars already loaded by main(). Don't call load_env() again
+        // to avoid working-directory issues.
         Ok(Self {
             broker: BrokerSettings {
-                name: env_loader::get_env_required("MT5_SERVER"),
-                account_type: env_loader::get_env_required("MT5_ACCOUNT"),
+                name: env_loader::get_env_required("MT5_SERVER")?,
+                account_type: env_loader::get_env_required("MT5_ACCOUNT")?,
             },
             telegram: TelegramSettings {
-                bot_token: env_loader::get_env_required("TELEGRAM_BOT_TOKEN"),
-                chat_id: env_loader::get_env_required("TELEGRAM_CHAT_ID"),
+                bot_token: env_loader::get_env_required("TELEGRAM_BOT_TOKEN")?,
+                chat_id: env_loader::get_env_required("TELEGRAM_CHAT_ID")?,
             },
             database: DatabaseSettings {
-                url: env_loader::get_env_required("DATABASE_URL"),
+                url: env_loader::get_env_required("DATABASE_URL")?,
             },
         })
     }
