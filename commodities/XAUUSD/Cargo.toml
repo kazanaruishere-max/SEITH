@@ -9,6 +9,10 @@ license.workspace = true
 name = "seith-backtest"
 path = "src/bin/seith_backtest.rs"
 
+[[bin]]
+name = "seith-ticktest"
+path = "src/bin/seith_ticktest.rs"
+
 [dependencies]
 # Workspace dependencies
 shared = { path = "../../shared" }

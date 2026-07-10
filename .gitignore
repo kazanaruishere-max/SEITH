@@ -41,3 +41,7 @@ Thumbs.db
 
 # Docker volumes (not used in dev)
 docker/volumes/
+
+# Tick data files
+*.ticks_synthetic.csv
+*.bi5

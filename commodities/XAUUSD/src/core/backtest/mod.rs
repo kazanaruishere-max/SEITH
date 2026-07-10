@@ -1,9 +1,11 @@
 // Backtest engine — replay historical OHLCV through L1→Execution pipeline
-// Full train/test split: trains on IS, validates on OOS
+// Full train/test split + tick-level backtest engine
 
 mod data_loader;
 mod reporter;
 mod simulator;
+pub mod tick_data;
+pub mod tick_engine;
 
 pub use data_loader::{load_ohlcv_csv, BacktestData};
 pub use reporter::BacktestReport;
