@@ -1,6 +1,6 @@
 // L3 - AI Global Event Loop
-// Live Dry-Run dengan optimal strategy:
-// Session filter (hour 5,12,19 UTC), HV>0.5, contrarian, SL=$3 TP=$4.50
+// 24 jam trading (kecuali weekend + rollover)
+// HV>0.5, contrarian, SL=$3 TP=$4.50
 
 use std::time::Duration;
 use tokio::time::interval;
@@ -9,13 +9,17 @@ use super::anti_paralysis::AntiParalysis;
 use super::state_manager::{StateManager, TradingState};
 use crate::core::l0_infra;
 use crate::core::l0_infra::DataFeed;
+use chrono::{Datelike, Timelike};
 use shared::external::mt5_bridge::Mt5Api;
 use shared::external::news_aggregator;
 
 const TICK_INTERVAL_SECS: u64 = 15;
 const TICK_M1: u64 = 60;
 const TICK_M15: u64 = 900;
-const TRADE_HOURS: &[u32] = &[8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]; // UTC — London/NY session
+const TRADE_HOURS: &[u32] = &[
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22,
+    23, // skip 21 = rollover
+];
 const HV_THRESHOLD: f64 = 0.5;
 const STOP_LOSS: f64 = 3.0;
 const TAKE_PROFIT: f64 = 4.50;
@@ -161,12 +165,26 @@ impl EventLoop {
         *returns.last().unwrap_or(&0.0) / std
     }
 
-    /// Main strategy logic — session filter + contrarian reversal
+    /// Main strategy logic — 24h trading with weekend/rollover filter
     async fn run_strategy(&mut self, now: chrono::DateTime<chrono::Utc>) {
+        // Skip weekend (Jumat 21:00 - Minggu 22:00 UTC)
+        if now.weekday() == chrono::Weekday::Fri && now.hour() >= 21 {
+            return;
+        }
+        if now.weekday() == chrono::Weekday::Sat {
+            return;
+        }
+        if now.weekday() == chrono::Weekday::Sun && now.hour() < 22 {
+            return;
+        }
+        // Skip daily rollover (21:00 UTC)
+        if now.hour() == 21 {
+            return;
+        }
+
         let hour = now.format("%H").to_string().parse::<u32>().unwrap_or(99);
         if !TRADE_HOURS.contains(&hour) {
-            log::debug!("Outside trade hours ({})", hour);
-            return;
+            return; // Silent skip — hanya jam rollover yg dilewati
         }
 
         if self.in_position {
