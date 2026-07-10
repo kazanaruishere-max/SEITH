@@ -158,4 +158,35 @@ impl Mt5Api {
                 .ok_or_else(|| anyhow::anyhow!("Order placement returned None"))
         })
     }
+
+    /// Place pending order (BUY_LIMIT / SELL_LIMIT / BUY_STOP / SELL_STOP).
+    /// Hanya pending order — HARAM market order untuk PF 4.0.
+    pub async fn place_pending_limit(
+        &self,
+        order_type: &str,
+        volume: f64,
+        price: f64,
+        sl: f64,
+        tp: f64,
+    ) -> Result<u64> {
+        let mt5_type = match order_type {
+            "BUY_LIMIT" => 2,
+            "SELL_LIMIT" => 3,
+            "BUY_STOP" => 4,
+            "SELL_STOP" => 5,
+            _ => anyhow::bail!("Invalid pending order type: {}", order_type),
+        };
+        pyo3::Python::with_gil(|py| {
+            let mt5 = pyo3::types::PyModule::import(py, "seith_bridge.mt5")?;
+            let ticket: Option<i64> = mt5
+                .call_method1(
+                    "place_pending_order",
+                    (&self.symbol, mt5_type, volume, price, sl, tp),
+                )?
+                .extract()?;
+            ticket
+                .map(|t| t as u64)
+                .ok_or_else(|| anyhow::anyhow!("Pending order failed"))
+        })
+    }
 }

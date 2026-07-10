@@ -174,6 +174,30 @@ impl EventLoop {
             return;
         }
 
+        // ── 1. Risk Check ──
+        let price = self.data_feed.last_price();
+        if price <= 0.0 {
+            return;
+        }
+        if self.prices.len() < 2 {
+            return;
+        }
+
+        let spread = self.data_feed.spread();
+        let position_count = if self.in_position { 1 } else { 0 };
+        let session_state = crate::core::execution::risk_manager::TradeSession {
+            daily_loss: 0.0,
+            weekly_loss: 0.0,
+            open_positions: position_count,
+        };
+        let limits = crate::core::execution::risk_manager::RiskLimits::default();
+        if let Err(e) =
+            crate::core::execution::risk_manager::can_trade(&session_state, &limits, spread, price)
+        {
+            log::warn!("Risk check failed: {}", e);
+            return;
+        }
+
         let hv = self.compute_hv_zscore();
         if hv <= HV_THRESHOLD {
             log::debug!("HV Z-Score {:.2} <= {:.1}, no trade", hv, HV_THRESHOLD);
@@ -184,34 +208,76 @@ impl EventLoop {
         if price <= 0.0 {
             return;
         }
-
         if self.prices.len() < 2 {
             return;
         }
+
         let prev_price = self.prices[self.prices.len() - 2];
         let trending_up = price > prev_price;
         let direction = if trending_up { "SELL" } else { "BUY" };
 
-        let (sl, tp) = if direction == "BUY" {
-            (price - STOP_LOSS, price + TAKE_PROFIT)
-        } else {
-            (price + STOP_LOSS, price - TAKE_PROFIT)
-        };
+        // ── 2. Confidence & Lot ──
+        let hv_strength = (hv / 3.0).min(1.0); // normalize HV to 0-1
+        let confidence = 65.0 + hv_strength * 25.0; // 65-90%
+        let lot = self.calculate_scalable_lot(confidence);
+        if lot <= 0.0 {
+            log::info!("Confidence {:.0}% too low, skipping", confidence);
+            return;
+        }
 
-        self.in_position = true;
-        self.position_type = direction.to_string();
-        self.entry_price = price;
-        self.sl_price = sl;
-        self.tp_price = tp;
-
-        log::info!(
-            "SIGNAL: {} XAUUSD Entry={:.3} SL={:.3} TP={:.3} HV={:.2}",
+        // ── 3. Order Manager (Limit/Stop only, HARAM Instant) ──
+        let plan = crate::core::execution::order_manager::plan_execution(
+            &crate::core::l1_structure::signal_classifier::SignalTier::Tier1Institutional,
             direction,
             price,
-            sl,
-            tp,
-            hv
+            (price + 5.0, price - 5.0),
+            spread,
+            0.5,
+            100.0,
         );
+
+        let (order_type, entry, sl, tp) = match &plan {
+            crate::core::execution::order_manager::ExecutionPlan::Limit(p) => {
+                ("BUY_LIMIT", p.entry_price, p.stop_loss, p.take_profit)
+            }
+            crate::core::execution::order_manager::ExecutionPlan::Stop(p) => {
+                ("BUY_STOP", p.entry_price, p.stop_loss, p.take_profit)
+            }
+            crate::core::execution::order_manager::ExecutionPlan::None => {
+                log::info!("No valid order plan (Instant skipped — HARAM)");
+                return;
+            }
+        };
+
+        // ── 4. MT5 Execution ──
+        if let Some(ref mt5) = self.mt5 {
+            match mt5
+                .place_pending_limit(order_type, lot, entry, sl, tp)
+                .await
+            {
+                Ok(ticket) => {
+                    log::info!(
+                        "Order placed: ticket={} lot={} {}@{:.3} SL={:.3} TP={:.3}",
+                        ticket,
+                        lot,
+                        order_type,
+                        entry,
+                        sl,
+                        tp
+                    );
+                    self.in_position = true;
+                    self.position_type = if order_type.contains("BUY") {
+                        "BUY".to_string()
+                    } else {
+                        "SELL".to_string()
+                    };
+                    self.entry_price = entry;
+                    self.sl_price = sl;
+                    self.tp_price = tp;
+                }
+                Err(e) => log::error!("Order failed: {}", e),
+            }
+        }
 
         // Build real-time reasoning
         let reasoning = format!(
@@ -334,6 +400,17 @@ impl EventLoop {
             self.in_position = false;
             self.position_type.clear();
         }
+    }
+
+    /// Scalable lot via Logistic S-Curve.
+    /// < 70% -> skip, 70% -> 0.01, 75% -> 0.03, 80%+ -> 0.05
+    fn calculate_scalable_lot(&self, confidence: f64) -> f64 {
+        if confidence < 70.0 {
+            return 0.0;
+        }
+        let norm = ((confidence - 70.0) / 10.0).clamp(0.0, 1.0);
+        let lot = 0.05 / (1.0 + std::f64::consts::E.powf(-6.0 * (norm - 0.5)));
+        (lot * 100.0).round().max(1.0) / 100.0
     }
 
     pub async fn run(&mut self) {

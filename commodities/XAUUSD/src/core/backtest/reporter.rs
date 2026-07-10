@@ -147,7 +147,7 @@ impl BacktestReport {
             max_drawdown_pct: max_dd_pct,
             avg_spread: (avg_spread * 100.0).round() / 100.0,
             final_balance: (final_balance * 100.0).round() / 100.0,
-            pnl: ((final_balance - 10_000.0) * 100.0).round() / 100.0,
+            pnl: ((final_balance - 4_500.0) * 100.0).round() / 100.0,
             sortino_ratio: (sortino * 100.0).round() / 100.0,
             recovery_factor: (rf * 100.0).round() / 100.0,
             is_trades: is_trades.len() as u32,

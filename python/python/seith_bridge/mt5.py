@@ -114,6 +114,38 @@ def place_order(
     return result.order
 
 
+def place_pending_order(
+    symbol: str,
+    order_type: int,
+    volume: float,
+    price: float,
+    sl: float = 0.0,
+    tp: float = 0.0,
+    comment: str = "AI SEITH",
+) -> Optional[int]:
+    """Place pending order (Limit/Stop) via MT5 with SL/TP bracket."""
+    request = {
+        "action": mt5.TRADE_ACTION_PENDING,
+        "symbol": symbol,
+        "volume": volume,
+        "type": order_type,
+        "price": price,
+        "sl": sl,
+        "tp": tp,
+        "deviation": 10,
+        "magic": 1001,
+        "comment": comment,
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_RETURN,
+    }
+    result = mt5.order_send(request)
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        print(f"[MT5] Pending order failed: {result.comment} (code {result.retcode})")
+        return None
+    print(f"[MT5] Pending order placed: ticket={result.order}")
+    return result.order
+
+
 import json
 
 def get_tick_json(symbol: str) -> Optional[str]:

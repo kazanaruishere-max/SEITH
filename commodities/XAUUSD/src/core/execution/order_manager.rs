@@ -1,9 +1,6 @@
 // Order Manager — Order Lifecycle & Validation
-// Routes to limit/stop/instant execution, validates before MT5 dispatch
+// Routes to limit/stop execution (HARAM market order/Instant Entry)
 
-use crate::core::execution::instant_entry::{
-    calculate_instant_entry, can_instant_entry, InstantEntryParams,
-};
 use crate::core::execution::limit_order::{calculate_limit_order, LimitOrderParams};
 use crate::core::execution::stop_order::{calculate_stop_order, StopOrderParams};
 use crate::core::l1_structure::signal_classifier::SignalTier;
@@ -12,7 +9,6 @@ use crate::core::l1_structure::signal_classifier::SignalTier;
 pub enum ExecutionPlan {
     Limit(LimitOrderParams),
     Stop(StopOrderParams),
-    Instant(InstantEntryParams),
     None,
 }
 
@@ -30,12 +26,8 @@ pub fn plan_execution(
         SignalTier::Tier1Institutional | SignalTier::Tier2Tactical => {
             let (high, low) = consolidate;
             let range_pips = (high - low).abs();
-            if can_instant_entry(body_ratio_val, velocity) {
-                ExecutionPlan::Instant(calculate_instant_entry(
-                    current_price,
-                    direction,
-                    spread_pips,
-                ))
+            if crate::core::execution::instant_entry::can_instant_entry(body_ratio_val, velocity) {
+                ExecutionPlan::None // HARAM market order — skip demi PF 4.0
             } else if range_pips > spread_pips * 3.0 {
                 ExecutionPlan::Limit(calculate_limit_order(
                     current_price,
@@ -65,9 +57,10 @@ mod tests {
     }
 
     #[test]
-    fn test_instant_on_rejection() {
+    fn test_instant_now_none() {
+        // Instant Entry sekarang HARAM → harus None
         let r = exec(&SignalTier::Tier2Tactical, 101.0, 99.0, 0.15, 250.0);
-        assert!(matches!(r, ExecutionPlan::Instant(_)));
+        assert!(matches!(r, ExecutionPlan::None));
     }
 
     #[test]
