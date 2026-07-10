@@ -91,6 +91,24 @@ impl EventLoop {
             return;
         }
 
+        // Heartbeat log setiap M1 tick
+        if is_m1 {
+            let in_pos = if self.in_position {
+                format!("IN {}", self.position_type)
+            } else {
+                "WAITING".to_string()
+            };
+            log::info!(
+                "[HEARTBEAT] Tick #{} | {} | price={:.3} | spread={:.3} | hv={:.2} | {}",
+                self.tick_counter,
+                now.format("%H:%M UTC"),
+                self.data_feed.last_price(),
+                self.data_feed.spread(),
+                self.compute_hv_zscore(),
+                in_pos,
+            );
+        }
+
         // Check position SL/TP every M1
         if self.in_position && is_m1 {
             if let Some(tick) = self.data_feed.last_tick() {

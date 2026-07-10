@@ -10,12 +10,31 @@ async fn main() {
         env::set_var("PYTHONPATH", python_path);
     }
 
-    // Load .env
+    // Load .env (harus sebelum env_logger)
     let env_path = std::path::Path::new("C:/Users/Lenovo/PROJECT/AI SEITH/.env");
     if env_path.exists() {
-        let _ = dotenvy::from_path(env_path);
+        if let Err(e) = dotenvy::from_path(env_path) {
+            eprintln!("[SEITH] .env load warning: {}", e);
+        }
+    } else {
+        eprintln!("[SEITH] .env not found, using system env vars");
+    }
+
+    // Pastikan RUST_LOG ter-set
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "debug");
     }
     env_logger::init();
+
+    eprintln!("========================================");
+    eprintln!("  AI SEITH v1.0 - XAUUSD Trading Bot");
+    eprintln!("========================================");
+    eprintln!("  Mode: Live Dry-Run + Auto-Execute");
+    eprintln!("  Trades: 24h (skip weekend + rollover)");
+    eprintln!("  Strategy: Contrarian reversal, HV>0.5");
+    eprintln!("  SL=$3.00 TP=$4.50 | Lot: S-Curve 65-80%");
+    eprintln!("  Telegram: @aiseith");
+    eprintln!("========================================");
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {

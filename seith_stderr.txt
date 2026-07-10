@@ -1,0 +1,28 @@
+[2026-07-10T13:53:05Z INFO  xauusd] Starting XAUUSD.sml pipeline...
+[2026-07-10T13:53:05Z INFO  xauusd::core::l3_engine::state_manager] StateManager: initial state = NORMAL_REGULER_MODE
+[2026-07-10T13:53:05Z INFO  xauusd::core::l3_engine::event_loop] EventLoop started for XAUUSD.sml (interval=15s) — LIVE DRY-RUN MODE
+[2026-07-10T13:53:05Z INFO  xauusd::core::l3_engine::event_loop] Trade hours: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23] UTC | HV>0.5 | SL=$3 TP=$4.5
+[2026-07-10T13:53:05Z INFO  shared::external::mt5_bridge] MT5 connecting to XAUUSD.sml
+[2026-07-10T13:53:05Z INFO  shared::external::mt5_bridge] MT5 connected and authorized
+[2026-07-10T13:53:05Z INFO  xauusd::core::l3_engine::event_loop] MT5 connected successfully
+[Telegram] Bot initialized: @AISEITH_bot
+[2026-07-10T13:53:07Z INFO  shared::external::telegram_bridge] Telegram message sent
+[2026-07-10T13:54:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T13:55:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T13:56:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T13:57:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T13:58:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T13:59:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:00:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:01:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:02:13Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:03:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:04:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:05:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:06:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:07:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:08:13Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:08:13Z WARN  xauusd::core::l3_engine::state_manager] State transition blocked: NORMAL_REGULER_MODE → NORMAL_REGULER_MODE (invalid state transition)
+[2026-07-10T14:09:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:10:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
+[2026-07-10T14:11:12Z INFO  shared::external::news_aggregator] Calendar: 13 events fetched
