@@ -8,14 +8,15 @@ fn main() {
 
     if !Path::new(tick_csv).exists() {
         eprintln!("Tick data not found: {}", tick_csv);
-        eprintln!("Run: python jupyter/generate_synthetic_ticks.py");
+        eprintln!("Run: python jupyter/generate_synthetic_ticks.py (first 500k ticks)");
+        eprintln!("Or: python jupyter/generate_ticks_v2.py (microstructure v2)");
         std::process::exit(1);
     }
 
     let sep = "=".repeat(60);
     println!("{}", sep);
-    println!("  AI SEITH Tick-Level Backtest Engine (Phase 2)");
-    println!("  Data: {}", tick_csv);
+    println!("  AI SEITH Tick-Level Backtest Engine (Phase 2/3)");
+    println!("  Data: {} (synthetic)", tick_csv);
     println!("{}", sep);
 
     // Load tick stream

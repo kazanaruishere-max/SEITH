@@ -156,29 +156,98 @@ impl TickEngine {
         if n < 20 {
             return None;
         }
+
+        // Phase 3: Micro-structure patterns (need real tick data with bid/ask volume)
+        if let Some(p) = self.detect_absorption() {
+            return Some(p);
+        }
+        if let Some(p) = self.detect_spread_exhaustion() {
+            return Some(p);
+        }
+        if let Some(p) = self.detect_cvd_divergence() {
+            return Some(p);
+        }
+
+        // Phase 2: Simple reversal heuristic (works on synthetic data)
         let last_5 = &self.prices[n.saturating_sub(5)..];
         let price_change =
             last_5.last().copied().unwrap_or(0.0) - last_5.first().copied().unwrap_or(0.0);
-
         if price_change.abs() < self.features.atr * 0.3 {
-            return None; // No clear trend
+            return None;
         }
-
         let trend = if price_change > 0.0 { "UP" } else { "DOWN" };
-
         if self.features.hv_zscore > 1.0 {
-            // Strong HV -> contrarian reversal
             let dir = if trend == "UP" { "SHORT" } else { "LONG" };
             return Some(format!("REVERSAL_{}", dir));
         }
+        None
+    }
 
-        // Moderate HV -> only if stalled
-        let stalled = last_5.len() >= 3
-            && (last_5[last_5.len() - 1] - last_5[last_5.len() - 3]).abs()
-                < self.features.atr * 0.2;
-        if stalled {
-            let dir = if trend == "UP" { "SHORT" } else { "LONG" };
-            return Some(format!("EXHAUSTION_{}", dir));
+    /// Phase 3: Bid absorption — dropping price stalls with buying volume.
+    fn detect_absorption(&self) -> Option<String> {
+        let n = self.prices.len();
+        if n < 20 {
+            return None;
+        }
+        let recent = &self.prices[n.saturating_sub(10)..];
+        if recent.len() < 6 {
+            return None;
+        }
+        let mid = recent.len() / 2;
+        let dropped = recent[0] > recent[mid.saturating_sub(1)].max(recent[mid]);
+        let flattened =
+            (recent.last().copied().unwrap_or(0.0) - recent[mid]).abs() < self.features.atr * 0.3;
+        if dropped && flattened && self.features.volume_imbalance > 0.2 {
+            return Some("ABSORPTION_LONG".to_string());
+        }
+        None
+    }
+
+    /// Phase 3: Spread exhaustion — spread widens then narrows with reversal.
+    fn detect_spread_exhaustion(&self) -> Option<String> {
+        if self.spreads.len() < 15 {
+            return None;
+        }
+        let s = &self.spreads[self.spreads.len().saturating_sub(10)..];
+        if s.len() < 8 {
+            return None;
+        }
+        let avg = s.iter().sum::<f64>() / s.len() as f64;
+        let max = s.iter().copied().fold(0.0f64, f64::max);
+        let curr = s.last().copied().unwrap_or(0.0);
+        if max > avg * 1.5 && curr < avg * 1.1 {
+            let trend = self.prices.last().copied().unwrap_or(0.0)
+                - self
+                    .prices
+                    .get(self.prices.len().saturating_sub(5))
+                    .copied()
+                    .unwrap_or(0.0);
+            if trend < 0.0 {
+                Some("SPREAD_EXHAUST_LONG".to_string())
+            } else {
+                Some("SPREAD_EXHAUST_SHORT".to_string())
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Phase 3: CVD divergence — price drops but CVD rises (accumulation).
+    /// Requires Dukascopy tick-level bid/ask volume data.
+    fn detect_cvd_divergence(&self) -> Option<String> {
+        if self.vol_imbalances.len() < 30 {
+            return None;
+        }
+        let v = &self.vol_imbalances[self.vol_imbalances.len().saturating_sub(20)..];
+        let avg_imb = v.iter().sum::<f64>() / v.len().max(1) as f64;
+        let dropping = self.prices.last().copied().unwrap_or(0.0)
+            < self
+                .prices
+                .get(self.prices.len().saturating_sub(10))
+                .copied()
+                .unwrap_or(0.0);
+        if dropping && avg_imb > 0.2 {
+            return Some("CVD_DIVERGENCE_LONG".to_string());
         }
         None
     }
