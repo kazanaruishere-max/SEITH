@@ -82,8 +82,8 @@ impl TickEngine {
         }
 
         if self.features.hv_zscore > 0.5 {
-            if let Some(pattern) = self.detect_reversal() {
-                self.enter_trade(tick, &pattern);
+            if let Some(signal) = self.detect_reversal() {
+                self.enter_trade(tick, &signal);
             }
         }
     }
@@ -151,24 +151,41 @@ impl TickEngine {
         }
     }
 
-    fn detect_reversal(&self) -> Option<String> {
+    fn detect_reversal(&self) -> Option<(String, f64)> {
         let n = self.prices.len();
         if n < 20 {
             return None;
         }
 
-        // Phase 3: Micro-structure patterns (need real tick data with bid/ask volume)
-        if let Some(p) = self.detect_absorption() {
-            return Some(p);
+        // Collect all pattern signals with confidence
+        let mut signals: Vec<(String, f64)> = Vec::new();
+
+        if let Some((p, c)) = self.detect_absorption() {
+            signals.push((p, c));
         }
-        if let Some(p) = self.detect_spread_exhaustion() {
-            return Some(p);
+        if let Some((p, c)) = self.detect_spread_exhaustion() {
+            signals.push((p, c));
         }
-        if let Some(p) = self.detect_cvd_divergence() {
-            return Some(p);
+        if let Some((p, c)) = self.detect_cvd_divergence() {
+            signals.push((p, c));
+        }
+        if let Some((p, c)) = self.detect_trend_reversal() {
+            signals.push((p, c));
         }
 
-        // Phase 2: Simple reversal heuristic (works on synthetic data)
+        // Sort by confidence descending
+        signals.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Take highest confidence signal
+        signals.into_iter().next()
+    }
+
+    /// Phase 2: Simple reversal heuristic (works on synthetic data)
+    fn detect_trend_reversal(&self) -> Option<(String, f64)> {
+        let n = self.prices.len();
+        if n < 20 {
+            return None;
+        }
         let last_5 = &self.prices[n.saturating_sub(5)..];
         let price_change =
             last_5.last().copied().unwrap_or(0.0) - last_5.first().copied().unwrap_or(0.0);
@@ -176,15 +193,18 @@ impl TickEngine {
             return None;
         }
         let trend = if price_change > 0.0 { "UP" } else { "DOWN" };
-        if self.features.hv_zscore > 1.0 {
+
+        if self.features.hv_zscore > 1.5 {
             let dir = if trend == "UP" { "SHORT" } else { "LONG" };
-            return Some(format!("REVERSAL_{}", dir));
+            let strength = (self.features.hv_zscore / 3.0).min(1.0);
+            let confidence = 50.0 + strength * 30.0; // 50-80%
+            return Some((format!("HV_REV_{}", dir), confidence));
         }
         None
     }
 
-    /// Phase 3: Bid absorption — dropping price stalls with buying volume.
-    fn detect_absorption(&self) -> Option<String> {
+    /// Phase 3: Bid absorption with confidence scoring
+    fn detect_absorption(&self) -> Option<(String, f64)> {
         let n = self.prices.len();
         if n < 20 {
             return None;
@@ -197,14 +217,16 @@ impl TickEngine {
         let dropped = recent[0] > recent[mid.saturating_sub(1)].max(recent[mid]);
         let flattened =
             (recent.last().copied().unwrap_or(0.0) - recent[mid]).abs() < self.features.atr * 0.3;
-        if dropped && flattened && self.features.volume_imbalance > 0.2 {
-            return Some("ABSORPTION_LONG".to_string());
+        if dropped && flattened {
+            // Confidence based on volume imbalance strength
+            let confidence = 60.0 + (self.features.volume_imbalance * 40.0).min(35.0);
+            return Some(("ABSORPTION_LONG".to_string(), confidence.min(95.0)));
         }
         None
     }
 
-    /// Phase 3: Spread exhaustion — spread widens then narrows with reversal.
-    fn detect_spread_exhaustion(&self) -> Option<String> {
+    /// Phase 3: Spread exhaustion with confidence
+    fn detect_spread_exhaustion(&self) -> Option<(String, f64)> {
         if self.spreads.len() < 15 {
             return None;
         }
@@ -216,25 +238,22 @@ impl TickEngine {
         let max = s.iter().copied().fold(0.0f64, f64::max);
         let curr = s.last().copied().unwrap_or(0.0);
         if max > avg * 1.5 && curr < avg * 1.1 {
+            let spread_ratio = max / avg.max(0.001);
+            let confidence = 55.0 + ((spread_ratio - 1.5) * 20.0).min(35.0);
             let trend = self.prices.last().copied().unwrap_or(0.0)
                 - self
                     .prices
                     .get(self.prices.len().saturating_sub(5))
                     .copied()
                     .unwrap_or(0.0);
-            if trend < 0.0 {
-                Some("SPREAD_EXHAUST_LONG".to_string())
-            } else {
-                Some("SPREAD_EXHAUST_SHORT".to_string())
-            }
-        } else {
-            None
+            let dir = if trend < 0.0 { "LONG" } else { "SHORT" };
+            return Some((format!("SPREAD_EXHAUST_{}", dir), confidence.min(90.0)));
         }
+        None
     }
 
-    /// Phase 3: CVD divergence — price drops but CVD rises (accumulation).
-    /// Requires Dukascopy tick-level bid/ask volume data.
-    fn detect_cvd_divergence(&self) -> Option<String> {
+    /// Phase 3: CVD divergence with confidence
+    fn detect_cvd_divergence(&self) -> Option<(String, f64)> {
         if self.vol_imbalances.len() < 30 {
             return None;
         }
@@ -247,23 +266,46 @@ impl TickEngine {
                 .copied()
                 .unwrap_or(0.0);
         if dropping && avg_imb > 0.2 {
-            return Some("CVD_DIVERGENCE_LONG".to_string());
+            let confidence = 60.0 + (avg_imb * 50.0).min(30.0);
+            return Some(("CVD_DIVERGENCE_LONG".to_string(), confidence.min(90.0)));
         }
         None
     }
 
-    fn enter_trade(&mut self, tick: &Tick, pattern: &str) {
-        let direction = if pattern.contains("LONG") || pattern == "BID_ABSORPTION" {
+    fn enter_trade(&mut self, tick: &Tick, signal: &(String, f64)) {
+        let (pattern, confidence) = signal;
+        // Only trade if confidence >= threshold (env-overridable)
+        let min_conf: f64 = std::env::var("BT_MIN_CONF")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(60.0);
+        if *confidence < min_conf {
+            return;
+        }
+
+        let direction = if pattern.contains("LONG") || pattern.contains("ABSORPTION") {
             "BUY"
         } else {
             "SELL"
         };
         let atr = self.features.atr.max(0.05);
-        let entry = tick.mid();
-        let (sl, tp) = if direction == "BUY" {
-            (entry - atr * 2.0, entry + atr * 3.0)
+
+        // Adaptive SL/TP: higher confidence → tighter SL, wider RR
+        let (sl_mult, rr) = if *confidence > 80.0 {
+            (1.5, 2.5) // High confidence: aggressive
+        } else if *confidence > 65.0 {
+            (2.0, 2.0) // Medium confidence
         } else {
-            (entry + atr * 2.0, entry - atr * 3.0)
+            (2.5, 1.5) // Low confidence: conservative
+        };
+
+        let entry = tick.mid();
+        let sl_dist = atr * sl_mult;
+        let tp_dist = sl_dist * rr;
+        let (sl, tp) = if direction == "BUY" {
+            (entry - sl_dist, entry + tp_dist)
+        } else {
+            (entry + sl_dist, entry - tp_dist)
         };
 
         self.in_position = true;

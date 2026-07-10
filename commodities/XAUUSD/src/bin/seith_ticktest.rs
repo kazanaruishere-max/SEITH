@@ -4,18 +4,18 @@ use std::path::Path;
 
 fn main() {
     let tick_csv =
-        "C:/Users/Lenovo/PROJECT/AI SEITH/jupyter/backtest_analysis/xauusd_ticks_dukascopy.csv";
+        "C:/Users/Lenovo/PROJECT/AI SEITH/jupyter/backtest_analysis/xauusd_ticks_synthetic.csv";
 
     if !Path::new(tick_csv).exists() {
-        eprintln!("Tick data not found: {}", tick_csv);
-        eprintln!("Run: python jupyter/download_ticks_dukascopy.py");
-        eprintln!("Or use: python jupyter/generate_synthetic_ticks.py");
+        eprintln!("Synthetic tick data not found: {}", tick_csv);
+        eprintln!("Run: python jupyter/generate_synthetic_ticks.py");
+        eprintln!("Or (real data): python jupyter/download_ticks_dukascopy.py");
         std::process::exit(1);
     }
 
     let sep = "=".repeat(60);
     println!("{}", sep);
-    println!("  AI SEITH Tick-Level Backtest (Real Dukascopy Data)");
+    println!("  AI SEITH Tick-Level Backtest (Synthetic Data)");
     println!("  Data: {}", tick_csv);
     println!("{}", sep);
 
