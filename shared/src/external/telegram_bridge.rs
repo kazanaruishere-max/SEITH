@@ -77,11 +77,11 @@ pub async fn send_signal(
     confidence: f64,
     reasoning: &str,
     order_type: &str,
-    prices: Vec<(i64, f64, f64)>, // (timestamp, bid, ask) for chart
-    signal_id: &str,              // unique ID for #SEITH-{id}
-    session_name: &str,           // real-time session (e.g., "Asia Prime")
-    orderflow_info: &str,         // real-time orderflow detection
-    invalid_condition: &str,      // invalidation condition
+    prices: Vec<(i64, f64, f64, f64, f64)>, // (timestamp, open, high, low, close)
+    signal_id: &str,                        // unique ID for #SEITH-{id}
+    session_name: &str,                     // real-time session (e.g., "Asia Prime")
+    orderflow_info: &str,                   // real-time orderflow detection
+    invalid_condition: &str,                // invalidation condition
 ) -> Result<()> {
     let settings = match crate::config::settings::Settings::from_env() {
         Ok(s) => s,
@@ -173,7 +173,7 @@ pub async fn send_signal(
 
 /// Generate chart image via Python chart.py
 async fn generate_chart_image(
-    prices: &[(i64, f64, f64)],
+    prices: &[(i64, f64, f64, f64, f64)],
     entry: f64,
     sl: f64,
     tp1: f64,
@@ -193,7 +193,7 @@ async fn generate_chart_image(
 
             let prices_py: Vec<Vec<f64>> = prices
                 .iter()
-                .map(|(t, b, a)| vec![*t as f64, *b, *a])
+                .map(|(ts, o, h, l, c)| vec![*ts as f64, *o, *h, *l, *c])
                 .collect();
 
             let tp2_py = tp2.unwrap_or(0.0);

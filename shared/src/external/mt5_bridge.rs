@@ -6,6 +6,9 @@ use anyhow::Result;
 /// Raw DOM level from Python bridge: (price, volume, mt5_type)
 pub type DomRawLevel = (f64, u64, i32);
 
+/// Raw OHLCV data: (timestamp, open, high, low, close, volume)
+pub type OhlcvRaw = (i64, f64, f64, f64, f64, f64);
+
 /// Full tick data: (bid, ask, spread)
 #[derive(Debug, Clone)]
 pub struct TickData {
@@ -191,15 +194,29 @@ impl Mt5Api {
     }
 
     /// Fetch recent M1 OHLCV rates for chart data via JSON bridge
-    pub async fn get_rates_raw(&self, count: i32) -> Result<Vec<(i64, f64, f64, f64, f64, f64)>> {
+    pub async fn get_rates_raw(&self, count: i32) -> Result<Vec<OhlcvRaw>> {
         let json_str: Option<String> = pyo3::Python::with_gil(|py| {
             let mt5 = pyo3::types::PyModule::import(py, "seith_bridge.mt5")?;
             mt5.call_method1("get_rates_json", (&self.symbol, count, 1))?
                 .extract()
         })?;
+        Self::parse_rates_json(&json_str, &self.symbol)
+    }
+
+    /// Fetch M15 OHLCV rates for chart data (bigger candles = better visibility)
+    pub async fn get_m15_raw(&self, count: i32) -> Result<Vec<OhlcvRaw>> {
+        let json_str: Option<String> = pyo3::Python::with_gil(|py| {
+            let mt5 = pyo3::types::PyModule::import(py, "seith_bridge.mt5")?;
+            mt5.call_method1("get_rates_json", (&self.symbol, count, 15))?
+                .extract()
+        })?;
+        Self::parse_rates_json(&json_str, &self.symbol)
+    }
+
+    fn parse_rates_json(json_str: &Option<String>, symbol: &str) -> Result<Vec<OhlcvRaw>> {
         match json_str {
             Some(s) => {
-                let parsed: serde_json::Value = serde_json::from_str(&s)?;
+                let parsed: serde_json::Value = serde_json::from_str(s)?;
                 let mut candles = Vec::new();
                 if let Some(arr) = parsed.as_array() {
                     for item in arr {
@@ -215,7 +232,7 @@ impl Mt5Api {
                 }
                 Ok(candles)
             }
-            None => anyhow::bail!("No rates for {}", self.symbol),
+            None => anyhow::bail!("No rates for {}", symbol),
         }
     }
 }

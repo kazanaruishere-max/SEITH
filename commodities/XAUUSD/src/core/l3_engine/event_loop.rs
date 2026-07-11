@@ -425,13 +425,13 @@ impl EventLoop {
         let signal_id = format!("{:x}", chrono::Utc::now().timestamp_millis() & 0xFFFFFF);
 
         // ── Chart prices dari real OHLCV history ──
-        let chart_prices: Vec<(i64, f64, f64)> = self
+        let chart_prices: Vec<(i64, f64, f64, f64, f64)> = self
             .data_feed
             .history()
             .iter()
             .rev()
             .take(20)
-            .map(|c| (c.time.timestamp(), c.low, c.high))
+            .map(|c| (c.time.timestamp(), c.open, c.high, c.low, c.close))
             .collect();
 
         // Logging
@@ -531,7 +531,7 @@ impl EventLoop {
 
                 // ── Fetch initial M1 OHLCV for chart data ──
                 if let Some(ref mt5) = self.mt5 {
-                    match mt5.get_rates_raw(20).await {
+                    match mt5.get_m15_raw(30).await {
                         Ok(rates) => {
                             for (ts, o, h, l, c, v) in &rates {
                                 if let Some(dt) = chrono::DateTime::from_timestamp(*ts, 0) {
@@ -545,9 +545,9 @@ impl EventLoop {
                                     });
                                 }
                             }
-                            log::info!("Loaded {} M1 candles for chart", rates.len());
+                            log::info!("Loaded {} M15 candles for chart", rates.len());
                         }
-                        Err(e) => log::warn!("Failed to load M1 rates: {}", e),
+                        Err(e) => log::warn!("Failed to load M15 rates: {}", e),
                     }
                 }
             }
