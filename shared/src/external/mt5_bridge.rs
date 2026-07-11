@@ -189,4 +189,33 @@ impl Mt5Api {
                 .ok_or_else(|| anyhow::anyhow!("Pending order failed"))
         })
     }
+
+    /// Fetch recent M1 OHLCV rates for chart data via JSON bridge
+    pub async fn get_rates_raw(&self, count: i32) -> Result<Vec<(i64, f64, f64, f64, f64, f64)>> {
+        let json_str: Option<String> = pyo3::Python::with_gil(|py| {
+            let mt5 = pyo3::types::PyModule::import(py, "seith_bridge.mt5")?;
+            mt5.call_method1("get_rates_json", (&self.symbol, count, 1))?
+                .extract()
+        })?;
+        match json_str {
+            Some(s) => {
+                let parsed: serde_json::Value = serde_json::from_str(&s)?;
+                let mut candles = Vec::new();
+                if let Some(arr) = parsed.as_array() {
+                    for item in arr {
+                        candles.push((
+                            item["time"].as_i64().unwrap_or(0),
+                            item["open"].as_f64().unwrap_or(0.0),
+                            item["high"].as_f64().unwrap_or(0.0),
+                            item["low"].as_f64().unwrap_or(0.0),
+                            item["close"].as_f64().unwrap_or(0.0),
+                            item["volume"].as_f64().unwrap_or(0.0),
+                        ));
+                    }
+                }
+                Ok(candles)
+            }
+            None => anyhow::bail!("No rates for {}", self.symbol),
+        }
+    }
 }

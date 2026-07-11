@@ -329,43 +329,82 @@ impl EventLoop {
             }
         }
 
-        // Build real-time reasoning
-        let reasoning = format!(
-            "Contrarian reversal signal detected. HV Z-Score {:.2} above {:.1} threshold.\n\
-            Price {:.3} vs previous {:.3} = {} trend.\n\
-            Mean reversion expected within 2-3 M15 bars based on session analysis.",
-            hv,
-            HV_THRESHOLD,
-            price,
-            self.prices
-                .get(self.prices.len().saturating_sub(2))
-                .copied()
-                .unwrap_or(0.0),
-            if trending_up { "UP" } else { "DOWN" }
-        );
+        // ── Build real-time analysis ──
+        let trend_label = if trending_up { "UP" } else { "DOWN" };
 
-        // Build orderflow info from DOM data
-        let orderflow_info = if let Some(dom) = self.data_feed.dom() {
+        // DOM volume analysis
+        let (orderflow_info, vol_ratio) = if let Some(dom) = self.data_feed.dom() {
             let bid_vol: u64 = dom.bids.iter().map(|l| l.volume).sum();
             let ask_vol: u64 = dom.asks.iter().map(|l| l.volume).sum();
-            if bid_vol > ask_vol * 2 {
-                format!(
-                    "\u{1f4a7} Order Flow: Dominasi BID ({:.0}% dari total depth)",
-                    bid_vol as f64 / (bid_vol + ask_vol).max(1) as f64 * 100.0
-                )
-            } else if ask_vol > bid_vol * 2 {
-                format!(
-                    "\u{1f4a7} Order Flow: Dominasi ASK ({:.0}% dari total depth)",
-                    ask_vol as f64 / (bid_vol + ask_vol).max(1) as f64 * 100.0
+            let total = bid_vol + ask_vol;
+            if total > 0 {
+                let ratio = bid_vol as f64 / total as f64;
+                (
+                    if ratio > 0.6 {
+                        format!(
+                            "\u{1f4a7} Order Flow: Dominasi BID ({:.0}% dari total depth)",
+                            ratio * 100.0
+                        )
+                    } else if ratio < 0.4 {
+                        format!(
+                            "\u{1f4a7} Order Flow: Dominasi ASK ({:.0}% dari total depth)",
+                            (1.0 - ratio) * 100.0
+                        )
+                    } else {
+                        "\u{1f4a7} Order Flow: Seimbang, tidak ada dominasi signifikan".to_string()
+                    },
+                    ratio,
                 )
             } else {
-                "\u{1f4a7} Order Flow: Seimbang, tidak ada dominasi signifikan".to_string()
+                (
+                    "\u{1f4a7} Order Flow: Tidak ada data volume".to_string(),
+                    0.5,
+                )
             }
         } else {
-            "\u{1f4a7} Order Flow: Data DOM tidak tersedia".to_string()
+            (
+                "\u{1f4a7} Order Flow: Data DOM tidak tersedia".to_string(),
+                0.5,
+            )
         };
 
-        // Session name based on hour
+        // Spread analysis
+        let spread_pips = self.data_feed.spread();
+        let spread_label = if spread_pips < 0.3 {
+            "Tight"
+        } else if spread_pips < 0.8 {
+            "Normal"
+        } else {
+            "Wide"
+        };
+
+        // Market regime from HV
+        let regime_label = if hv > 1.5 {
+            "High Volatility"
+        } else if hv > 0.8 {
+            "Moderate Volatility"
+        } else {
+            "Normal Volatility"
+        };
+
+        // Real-time reasoning
+        let reasoning = format!(
+            "[MARKET REGIME] {} (HV Z-Score: {:.2})\n\
+             [PRICE ACTION] Trend {} | Price: {:.3} | Spread: {:.3} ({})\n\
+             [ORDERFLOW] Buy/Sell Ratio: {:.0}/{:.0}\n\
+             [ANALYSIS] Contrarian reversal detected. High volatility + overextended price.\n\
+             Mean reversion expected within 1-2 M15 bars.",
+            regime_label,
+            hv,
+            trend_label,
+            price,
+            spread_pips,
+            spread_label,
+            vol_ratio * 100.0,
+            (1.0 - vol_ratio) * 100.0
+        );
+
+        // Session name
         let session_name = match hour {
             5..=7 => "Asia Prime",
             8..=11 => "London Open",
@@ -377,38 +416,45 @@ impl EventLoop {
 
         // Invalid condition
         let invalid_condition = if direction == "BUY" {
-            format!("Close below {:.3} (premium zone)", price - STOP_LOSS * 2.0)
+            format!("Close below {:.3} (premium zone)", price - STOP_LOSS * 3.0)
         } else {
-            format!("Close above {:.3} (premium zone)", price + STOP_LOSS * 2.0)
+            format!("Close above {:.3} (premium zone)", price + STOP_LOSS * 3.0)
         };
 
-        // Signal ID (timestamp-based)
+        // Signal ID
         let signal_id = format!("{:x}", chrono::Utc::now().timestamp_millis() & 0xFFFFFF);
 
-        // Build price list for chart from recent ticks
+        // ── Chart prices dari real OHLCV history ──
         let chart_prices: Vec<(i64, f64, f64)> = self
-            .prices
+            .data_feed
+            .history()
             .iter()
             .rev()
-            .take(60)
-            .enumerate()
-            .map(|(i, &p)| {
-                let ts =
-                    (chrono::Utc::now() - chrono::Duration::seconds(i as i64 * 15)).timestamp();
-                (ts, p - 0.05, p + 0.05)
-            })
+            .take(20)
+            .map(|c| (c.time.timestamp(), c.low, c.high))
             .collect();
 
+        // Logging
+        log::info!(
+            "SIGNAL: {} XAUUSD | HV={:.2} | Conf={:.0}% | Lot={} | Chart bars={}",
+            direction,
+            hv,
+            confidence,
+            lot,
+            chart_prices.len()
+        );
+
+        // Kirim signal + chart ke Telegram
         let _ = shared::external::telegram_bridge::send_signal(
             direction,
-            price,
+            entry,
             sl,
-            tp + (tp - price) * 2.0,
-            Some(tp + (tp - price) * 3.0),
-            0.01,
-            65.0,
+            tp,
+            Some(tp + (tp - price) * 2.0),
+            lot,
+            confidence,
             &reasoning,
-            "SELL_LIMIT",
+            order_type,
             chart_prices,
             &signal_id,
             session_name,
@@ -482,6 +528,28 @@ impl EventLoop {
             Ok(()) => {
                 log::info!("MT5 connected successfully");
                 self.mt5 = Some(api);
+
+                // ── Fetch initial M1 OHLCV for chart data ──
+                if let Some(ref mt5) = self.mt5 {
+                    match mt5.get_rates_raw(20).await {
+                        Ok(rates) => {
+                            for (ts, o, h, l, c, v) in &rates {
+                                if let Some(dt) = chrono::DateTime::from_timestamp(*ts, 0) {
+                                    self.data_feed.push_ohlcv(crate::core::l0_infra::Ohlcv {
+                                        time: dt,
+                                        open: *o,
+                                        high: *h,
+                                        low: *l,
+                                        close: *c,
+                                        volume: *v,
+                                    });
+                                }
+                            }
+                            log::info!("Loaded {} M1 candles for chart", rates.len());
+                        }
+                        Err(e) => log::warn!("Failed to load M1 rates: {}", e),
+                    }
+                }
             }
             Err(e) => {
                 log::error!("MT5 connection failed: {}", e);

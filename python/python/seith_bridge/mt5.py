@@ -64,7 +64,22 @@ def get_tick(symbol: str) -> Optional[dict]:
     }
 
 
-def get_rates(symbol: str, count: int = 100, timeframe: int = mt5.TIMEFRAME_M15) -> Optional[list]:
+def get_rates_json(symbol: str, count: int = 100, timeframe: int = mt5.TIMEFRAME_M1) -> Optional[str]:
+    """Get OHLCV rates as JSON string for Rust FFI."""
+    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+    if rates is None:
+        return None
+    result = []
+    for r in rates:
+        result.append({
+            "time": int(r.time),
+            "open": r.open,
+            "high": r.high,
+            "low": r.low,
+            "close": r.close,
+            "volume": r.tick_volume,
+        })
+    return json.dumps(result)
     """Get OHLCV rates"""
     rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
     if rates is None:
