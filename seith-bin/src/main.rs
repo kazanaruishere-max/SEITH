@@ -45,6 +45,7 @@ async fn main() {
 
     match args[1].as_str() {
         "XAUUSD" => xauusd::run().await,
+        "US100" => us100::run().await,
         "EURUSD" => log::info!("EURUSD placeholder"),
         "BTCUSD" => log::info!("BTCUSD placeholder"),
         other => {

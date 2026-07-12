@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 shared = { path = "../shared" }
 xauusd = { path = "../commodities/XAUUSD" }
+us100 = { path = "../indices/US100" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }

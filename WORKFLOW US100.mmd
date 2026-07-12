@@ -1,0 +1,304 @@
+graph TD
+    %% Styling
+    classDef level0 fill:#ffebd6,stroke:#ff9233,stroke-width:2px,color:#000;
+    classDef level1 fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000;
+    classDef level2 fill:#fffde7,stroke:#fbc02d,stroke-width:2px,color:#000;
+    classDef level3 fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000;
+    classDef block fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#000,stroke-dasharray: 5 5;
+    classDef execute fill:#ffebee,stroke:#d32f2f,stroke-width:2px,color:#000;
+    classDef normal fill:#e0f7fa,stroke:#00acc1,stroke-width:2px,color:#000;
+    classDef compass fill:#fff3e0,stroke:#ff6d00,stroke-width:2px,color:#000;
+    classDef database fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px,color:#000;
+    classDef trigger fill:#fce4ec,stroke:#e91e63,stroke-width:2px,color:#000;
+    classDef orange fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#000;
+
+    %% =========================================================================
+    %% LEVEL 0: OANDA INFRASTRUKTUR, SESSION PHASE, MACRO, EARNINGS, GAP
+    %% =========================================================================
+    subgraph DAY_FILTER ["DAY 0: MARKET DAY FILTER & CONNECTIVITY CHECK"]
+        A0{"Cek Hari Ini: Weekend Atau US Holiday?"}:::level0
+        A0 -->|"Sabtu / Minggu"| A0a["DAY_OFF: Market Tutup, Standby Penuh, Tidak Ada Loop"]:::block
+        A0 -->|"US Holiday (MLK/Presidents/Good Fri/Memorial/Juneteenth/Independence/Labor/Thanksgiving/Christmas)"| A0a
+        A0 -->|"Hari Trading Normal"| A0b["Inisialisasi OANDA Feed + Auto-Reconnect Handler: Retry 3x, Standby 60s Jika Gagal"]:::level0
+        A0b --> A0c{"OANDA API Connect Berhasil?"}:::level0
+        A0c -->|"Gagal Total Setelah 3x Retry"| A0d["Telegram Alert: OANDA Disconnected -> Standby 60s -> Retry"]:::execute
+        A0d --> A0b
+        A0c -->|"Berhasil"| A
+    end
+
+    subgraph LEVEL_0 ["LEVEL 0: CORE ENVIRONMENT & INFRASTRUCTURE (OANDA)"]
+        A["Data Feed: OANDA REST API v20 US100.cash + US10YB + US02YB + HV Z-Score real-time"]:::level0
+        
+        A --> B{"Deteksi Session Phase dari UTC Timestamp"}:::level0
+        
+        B -->|"14:30-15:00 UTC"| B1["SESSION_PHASE = OPEN: Inisialisasi Feed & Stabilisasi Indikator"]:::level0
+        B1 --> B1a{"Apakah dalam 30 Menit Pertama Sejak Market Open?"}:::level0
+        B1a -->|Yes| B1b["POST_OPEN_STABILIZE = TRUE: Block Semua Sinyal, Tunggu Indikator Stabil"]:::block
+        B1a -->|No| C
+        
+        B -->|"15:00-16:30 UTC"| B2["SESSION_PHASE = NORMAL: SNIPER Mode, Volume Tinggi"]:::level0
+        B2 --> C
+        
+        B -->|"16:30-18:00 UTC"| B3["SESSION_PHASE = LUNCH: Volume Rendah, False Breakout Zone"]:::level0
+        B3 --> B3a["LUNCH_MODE = TRUE: Block Semua Sinyal"]:::block
+        
+        B -->|"18:00-19:30 UTC"| B4["SESSION_PHASE = NORMAL: SNIPER Mode"]:::level0
+        B4 --> C
+        
+        B -->|"19:30-20:30 UTC"| B5["SESSION_PHASE = POWER_HOUR: SCALP Mode, Volume Puncak"]:::level0
+        B5 --> C
+        
+        B -->|"20:30-21:00 UTC"| B6["SESSION_PHASE = CLOSE: Block Semua Sinyal"]:::level0
+        B6 --> B6a["CLOSE_MODE = TRUE: Block + Bersihkan Pending Order"]:::block
+        
+        B -->|"21:00-14:30 UTC"| B7["FORCE_CLOSE: Tutup Semua Posisi"]:::execute
+        B7 --> B7a["SESSION_CLOSED: Standby Hingga Market Open"]:::level0
+        
+        %% Macro + Earnings (merged, all-in-one)
+        C["Cek Kalender Makro + Earnings Hari Ini"]:::level0
+        C --> C1{"Event RED (FOMC/CPI/NFP/GDP)?"}:::level0
+        C1 -->|"Ya"| C2["NO_TRADE: Matikan Semua Engine"]:::block
+        
+        C1 -->|"Tidak"| C3{"Event ORANGE (PPI/ISM/Retail) atau Earnings Window?"}:::orange
+        C3 -->|"Ya"| C4["WARNING: Lot 50%, Spread +15%"]:::orange
+        C3 -->|"Tidak"| D
+        
+        %% Gap Detection (flag only)
+        D["Cek Gap: Harga Open vs Close Sebelumnya"]:::level0
+        D --> D1{"Gap > 0.3%?"}:::level0
+        D1 -->|"Ya"| D2["gap_detected = TRUE -> Skip 30m Pertama"]:::level0
+        D1 -->|"Tidak"| E
+        
+        %% Normalisasi Harga
+        D2 --> E["Normalisasi Harga 2 Digit Desimal"]:::level0
+    end
+
+    %% =========================================================================
+    %% LEVEL 3: MASTER CONTROL PIPELINE & EVENT LOOP (PHASE-AWARE)
+    %% =========================================================================
+    subgraph LEVEL_3_CORE ["LEVEL 3: MASTER CONTROL PIPELINE & EVENT LOOP"]
+        E --> F["AI US100 Event Loop Active: Setiap Penutupan Lilin M1/M15"]:::level3
+        F --> F1{"Skip Terakhir: 'Market Condition' atau 'Signal Reject'?"}:::level3
+        F1 -->|"Market Condition (HV Z > +2.0, Lunch, Gap, Macro)"| F2["TIDAK increment skip_count: Kondisi Pasar Normal"]:::level3
+        F1 -->|"Signal Reject (FRAMA overextended, OFS lemah)"| F3["INCREMENT skip_count: Sistem Gagal Dapat Setup"]:::level3
+        F2 & F3 --> G["Baca Counter 'skip_strike_count' dari SQLite"]:::level3
+        G --> H["Baca Phase Sekarang: Sesuaikan Threshold dengan Session Phase Saat Ini"]:::level3
+        H --> I{"Apakah LUNCH_MODE atau CLOSE_MODE Aktif?"}:::level3
+        I -->|Yes| I1["BLOKIR TOTAL: Tidak Ada Eksekusi Selama Fase Lunch / Close"]:::block
+        I1 --> Loop_End_1["Siklus Loop Selesai - Menunggu Perubahan Phase Berikutnya"]:::level3
+        
+        I -->|No| J{"Apakah STATUS == NO_TRADE Atau POST_OPEN_STABILIZE?"}:::level3
+        J -->|Yes| J1["BLOKIR TOTAL: Tidak Ada Eksekusi Selama Macro Event / Stabilisasi Open"]:::block
+        J1 --> Loop_End_1
+        
+        J -->|No: Lanjut ke Pipeline| K["Buka 5-Gate Indicator Pipeline: Evaluasi Semua Gate Berurutan"]:::level3
+    end
+
+    %% =========================================================================
+    %% LEVEL 1: 5-GATE INDICATOR PIPELINE (SEQUENTIAL, SEMUA GATE HARUS LOLOS)
+
+    %% =========================================================================
+    subgraph LEVEL_1_PIPELINE ["LEVEL 1: 5-GATE INDICATOR PIPELINE (MACRO -> HV -> FRAMA -> OFS -> VWAP+YIELD)"]
+        K --> G0["GATE 0 - Macro + Earnings Calendar: Cek Event Hari Ini"]:::level2
+        G0 --> G0a{"Event RED (FOMC/CPI/NFP/GDP)?"}:::level2
+        G0a -->|"Ya"| G0b["GATE 0 GAGAL: No-Trade Zone"]:::block
+        G0b --> L["Kirim Status ke Modul Evaluasi Risiko"]:::level3
+        G0a -->|"Tidak"| G0c{"Event ORANGE atau Earnings?"}:::orange
+        G0c -->|"Ya"| G0d["WARNING: Lot 50%"]:::orange
+        G0c -->|"Tidak"| G0e["GATE 0 LOLOS"]:::level2
+        
+        %% Gate 1: HV Z-Score (real-time dari US100 price)
+        G0d & G0e --> G1["GATE 1 - HV Z-Score: Market Regime Detector (Real-time)"]:::level2
+        G1 --> G1a["Hitung HV Z-Score dari rolling std dev returns US100 10-20 bar (0 latensi)"]:::level2
+        G1a --> G1b["VIX yfinance 1x per session untuk kalibrasi threshold harian"]:::level2
+        G1b --> G1c{"HV Z-Score?"}:::level2
+        G1c -->|"< -1.0 (Sangat Rendah)"| G1d["GATE 1 GAGAL: False Breakout Risk"]:::block
+        G1d --> L
+        G1c -->|"-1.0 s.d +1.5 (Sweet Spot)"| G1e["LOLOS"]:::level2
+        G1c -->|"+1.5 s.d +2.0 (Meningkat)"| G1h["LOLOS - Confidence Turun"]:::orange
+        G1h --> G1e
+        G1c -->|"> +2.0 (Ekstrem)"| G1f["GATE 1 GAGAL: Reversal Risk"]:::block
+        G1f --> L
+        
+        %% Gate 2: FRAMA Trend
+        G1e --> G2["GATE 2 - FRAMA Trend Rider M15"]:::level2
+        G2 --> G2a["Kalkulasi FRAMA + Z_FRAMA"]:::level2
+        G2a --> G2b{"Z_FRAMA <= 0.5?"}:::level2
+        G2b -->|"Ya: Pullback Valid"| G2c["LOLOS"]:::level2
+        G2b -->|"Tidak: Overextended"| G2d["GATE 2 GAGAL: FOMO Risk"]:::block
+        G2d --> L
+        
+        %% Gate 3: Orderflow (3 Komponen)
+        G2c --> G3["GATE 3 - Orderflow (Delta + CVD + DOM)"]:::level2
+        G3 --> G3a["Hitung S_Delta: Buy - Sell Aggressor"]:::level2
+        G3a --> G3b["Hitung S_CVD: Cumulative Delta Divergence"]:::level2
+        G3b --> G3c["Hitung S_DOM Z-Score: DOM Imbalance"]:::level2
+        G3c --> G3d["Deteksi Absorption: Limit Besar Termakan Tanpa Reversal?"]:::level2
+        G3d --> G3e{"Absorption?"}:::level2
+        G3e -->|"Ya"| G3f["Konfirmasi Arah Breakout: PASS"]:::trigger
+        G3e -->|"Tidak"| G3g["Normal"]:::level2
+        G3f & G3g --> G3h["Hitung OFS = S_Delta + S_CVD + S_DOM"]:::level2
+        G3h --> G3i{"OFS Sesuai Phase?"}:::level2
+        G3i -->|"NORMAL: <= -3 / >= +3"| G3j["LOLOS"]:::level2
+        G3i -->|"POWER HOUR: <= -2 / >= +2"| G3j
+        G3i -->|"Tidak Memenuhi"| G3k["GATE 3 GAGAL: Retail Noise"]:::block
+        G3k --> L
+        
+        %% Gate 4: VWAP + Yield (merged)
+        G3j --> G4["GATE 4 - VWAP Bands + Yield Confirmation"]:::level2
+        G4 --> G4a["Session VWAP +-2.5 Band"]:::level2
+        G4a --> G4b{"Dalam Band?"}:::level2
+        G4b -->|"Di Luar"| G4c["GATE 4 GAGAL: Overextended"]:::block
+        G4c --> L
+        G4b -->|"Dalam"| G4d["VWAP OK"]:::level2
+        G4d --> G4e["US10Y Yield Z-Score + Curve Spread"]:::level2
+        G4e --> G4f{"Yield Z > +1.5?"}:::level2
+        G4f -->|"Ya"| G4g["Bearish: Confirm Sell / Block Buy"]:::level2
+        G4f -->|"Tidak"| G4h{"Yield Z < -1.5?"}:::level2
+        G4h -->|"Ya"| G4i["Bullish: Confirm Buy / Block Sell"]:::level2
+        G4h -->|"Normal"| G4j["Yield Normal"]:::level2
+        G4g & G4i & G4j --> G4k["Curve Spread: Inverted = prefer Sell, Normal = prefer Buy"]:::level2
+        G4k --> G4l["GATE 4 LOLOS: Level + Makro Confirm"]:::level2
+        
+        %% Final Classification
+        G4l --> G5["SIGNAL CLASSIFIER: 5-Gate Result"]:::level2
+        G5 --> G5a{"Gate Pass Count"}:::level2
+        G5a -->|"5/5"| G5b["SINYAL VALID: Eksekusi"]:::level2
+        G5a -->|"< 5/5"| G5d["SINYAL GAGAL: Skip - Tidak Cukup Gate Lolos"]:::block
+        G5d --> L
+    end
+
+    %% =========================================================================
+    %% LEVEL 3: THE STATISTICAL BRAIN & ANTI-PARALYSIS
+    %% =========================================================================
+    subgraph LEVEL_3_BRAIN ["LEVEL 3: STATISTICAL BRAIN & ANTI-PARALYSIS ADAPTATION"]
+        L --> M1{"Query skip_strike_count dari SQLite"}:::level3
+        
+        M1 -->|"< 3"| M2["NORMAL: Skip Diizinkan"]:::level3
+        M2 --> Loop_End_2["Siklus Selesai"]:::level3
+        
+        M1 -->|"3 s.d 4"| M3["KRISIS: Relax OFS Saja (3 -> 2) + Mode SCALP"]:::level3
+        M3 --> M4["OFS Threshold: Dari >= 3 Menjadi >= 2"]:::level3
+        M4 --> M5["Mode Dipaksa SCALP: RR 1:0.5, Risk 0.5%"]:::trigger
+        M5 --> M6["Gate Lain TETAP (HV/FRAMA/VWAP/Yield Tidak Diubah)"]:::level3
+        M6 --> M7["Sinyal OFS Relax + SCALP Masuk Pipeline"]:::level3
+        
+        M1 -->|">= 5"| M8["CRISIS CEILING: Reset skip_count = 0, Standby 1 Session"]:::execute
+        M8 --> M9["Telegram Alert: Sistem Tidak Dapat Setup"]:::execute
+        M9 --> M10["Standby 1 Session Penuh, Baru Kembali Normal"]:::level3
+        
+        %% Penggabungan + Mode Decision
+        G5b --> M11a{"TENTUKAN MODE"}:::level3
+        M7 --> K
+        M11a -->|"Phase = NORMAL & skip < 3"| M11b["SNIPER: RR 1:1.5, SL di FRAMA"]:::level2
+        M11a -->|"Phase = POWER HOUR"| M11c["SCALP: RR 1:0.5, SL Tight 5-10pts"]:::trigger
+        M11a -->|"Crisis (skip 3-4)"| M11d["SCALP DARURAT: OFS di 2, Risk 0.5%"]:::trigger
+        
+        M11b & M11c & M11d --> M12["SQLite: Histori Trading 1-2 Bulan"]:::level3
+        M12 --> M13["Model Statistik: Volatility, Slippage, Spread"]:::level3
+        M13 --> M13a["Lot Sizing Hybrid Multiplier:
+            1. BaseUnit = Equity x Risk% / (SL_Pts x PointValue)
+            2. Equity dari OANDA balance API real-time
+            3. Terapkan ConfidenceMult + ModeMult + MacroMult
+            4. Final Lot dibatasi min/max"]:::level3
+        M13a --> M14["Sintesis: Entry, SL, TP, Lot Final Sesuai Mode"]:::level3
+    end
+
+    %% =========================================================================
+    %% TELEGRAM DISPATCHER & EXECUTION PIPELINE
+    %% =========================================================================
+    subgraph EXECUTION_PIPELINE ["EXECUTION: ORDER API -> KONFIRMASI -> TELEGRAM (POST-EXECUTION)"]
+        M14 --> U{"PILIH MODE EKSEKUSI BERDASARKAN SESSION PHASE"}:::level3
+        
+        %% Mode Decision
+        U -->|"MODE = SNIPER (NORMAL)"| SA["MASUK KE SNIPER PIPELINE: RR 1:1.5, SL di FRAMA"]:::level2
+        U -->|"MODE = SCALP (POWER HOUR / CRISIS)"| SB["MASUK KE SCALP PIPELINE: RR 1:0.5, SL Tight"]:::trigger
+        
+        %% ===== SNIPER PIPELINE (RR 1:1.5) =====
+        SA --> SA_dec{"Entry Type (Default: Breakout)?"}:::level3
+        SA_dec -->|"Breakout (default)"| V["SIAPKAN SNIPER STOP ORDER: Breakout Konfirmasi OFS Kuat"]:::execute
+        V --> V1["Hitung Entry: Puncak Range Konsolidasi + Buffer 2 Point"]:::execute
+        V1 --> V2["Hitung SL: Di Bawah FRAMA / Support Terdekat (RR 1:1.5)"]:::execute
+        V2 --> V3["Hitung TP: Resistance Level / VWAP Band Atas"]:::execute
+        V3 --> V4["Kirim STOP ORDER ke OANDA API: BUY_STOP / SELL_STOP"]:::execute
+        V4 --> V5{"Order API Success?"}:::execute
+        V5 -->|"Ya"| V6["Stop Order Terpasang -> Menunggu Eksekusi Harga"]:::execute
+        V5 -->|"Tidak: Retry 1x"| V4
+        V5 -->|"Gagal Total"| Err["ORDER ERROR: Log Error, Kirim Telegram Alert, Skip Rekalibrasi"]:::execute
+        
+        %% Sniper Limit secondary
+        SA_dec -->|"Pullback ke FRAMA"| altV["Alternatif: SNIPER LIMIT ORDER (Jika Pullback Ke FRAMA)"]:::execute
+        altV --> altV1["Hitung Entry: Z_FRAMA Mendekati 0 + Support/Resistance"]:::execute
+        altV1 --> altV2["Pasang BUY_LIMIT / SELL_LIMIT di Level Pullback"]:::execute
+        altV2 --> altV3{"Order API Success?"}:::execute
+        altV3 -->|"Ya"| altV4["Limit Order Terpasang -> Menunggu Eksekusi Harga"]:::execute
+        altV3 -->|"Tidak: Retry 1x"| altV2
+        altV3 -->|"Gagal Total"| Err
+        
+        %% ===== SCALP PIPELINE (RR 1:0.5) =====
+        SB --> SC1["SIAPKAN SCALP MARKET ORDER: Momentum Cepat, Exit Cepat"]:::trigger
+        SC1 --> SC2["Hitung Entry: Harga Pasar Saat Ini"]:::execute
+        SC2 --> SC3["Hitung SL: 5-10 Point Saja, Ketat"]:::execute
+        SC3 --> SC4["Hitung TP: 8-15 Point, Cepat Ambil Profit"]:::execute
+        SC4 --> SC5["Kirim Market Order ke OANDA API: Eksekusi Segera"]:::execute
+        SC5 --> SC6{"Order API Success?"}:::execute
+        SC6 -->|"Ya"| SC7["Posisi SCALP Masuk -> Monitor Ketat"]:::execute
+        SC6 -->|"Tidak: Retry 1x"| SC5
+        SC6 -->|"Gagal Total"| Err
+        
+        %% === POST-EXECUTION: Telegram Hanya Jika Order Sukses ===
+        V6 & altV4 & SC7 --> TG1["ORDER SUKSES: Kirim Chart + Signal + Konfirmasi ke Telegram"]:::execute
+        Err --> TG2["ORDER GAGAL: Kirim Error Alert ke Telegram, Tidak Masuk Rekalibrasi"]:::execute
+        TG2 --> Loop_End_2
+        
+        %% Menunggu posisi selesai
+        TG1 --> Y["Posisi Transaksi Berjalan di OANDA Hingga Hit TP / SL"]:::execute
+    end
+
+    %% =========================================================================
+    %% CLOSED-LOOP SELF-LEARNING ENGINE (PASCA-TRADE)
+    %% =========================================================================
+    subgraph SELF_LEARNING ["LEVEL 3: CLOSED-LOOP SELF-LEARNING ENGINE (PASCA-TRADE)"]
+        Y --> Z1{"Monitor Waktu: Apakah Market Menuju CLOSE Phase?"}:::level3
+        Z1 -->|"CLOSE dalam 5 Menit"| Z2["FUNGSI AUTO-KILL: Hapus Semua Sisa Pending Order"]:::execute
+        Z2 --> Z3["Kirim Perintah OANDA API: Cancel Semua Order Limit/Stop Aktif"]:::execute
+        Z1 -->|Tidak| Y
+        
+        Z3 & Y --> AA["Transaksi Selesai -> Tarik Laporan Riil Pasca-Trading dari OANDA"]:::level3
+        AA --> AB["Ekstrak Parameter: Win/Loss, Slippage Aktual, Spread Riil, Profit/Loss"]:::level3
+        
+        AB --> AB1{"Mode Saat Ini?"}:::level3
+        AB1 -->|"SNIPER"| AB2["Rekalibrasi Langsung: Proses Satu Per Satu"]:::level3
+        AB1 -->|"SCALP"| AB3{"Scalp trade ke berapa?"}:::level3
+        AB3 -->|"Trade 1"| AB2
+        AB3 -->|"Trade 2+ dalam 15 menit"| AB4["Batch 2: Kumpulkan 2 Trade Dulu, Baru Rekalibrasi"]:::level3
+        AB3 -->|"Slippage > 50% expected"| AB2
+        AB2 & AB4 --> AC["Tulis Baris Baru Hasil Eksekusi ke Database Lokal SQLite"]:::database
+        AC --> AD["JALANKAN PROSES REKALIBRASI KOGNITIF OTOMATIS"]:::level3
+        AD --> AD1["1. Optimasi Formula Buffer Spacing Berdasarkan Slippage Riil"]:::level3
+        AD --> AD2["2. Update Peta Probabilitas Menang (Win Probability Map)"]:::level3
+        AD --> AD3["3. Kalibrasi Threshold OFS Berdasarkan Hasil Eksekusi"]:::level3
+        AD --> AD4["4. Track Performa Per Mode: Bandingkan WR Sniper vs Scalp"]:::level3
+        
+        AD3 --> AE["Reset Counter 'skip_strike_count' ke Nol: Sembuh dari Sifat Penakut"]:::level3
+        AE --> AF["Kirim Notifikasi Laporan Hasil Trading ke Telegram Bot (P&L Akun Riil)"]:::execute
+        
+        AF --> AG{"Audit Kondisi: Apakah Volatilitas Normal & Spread Kembali?"}:::level3
+        AG -->|No| AG
+        AG -->|Yes| AH["Reset Session Phase: Kembali ke Event Loop Awal"]:::normal
+        AH -->|Loop Tak Terbatas| F
+    end
+
+    %% Hubungan Evaluasi Gagal ke L
+    G0d -.-> L
+    G1d -.-> L
+    G1f -.-> L
+    G2d -.-> L
+    G3k -.-> L
+    G4c -.-> L
+    G5d -.-> L
+    B3a -.-> Loop_End_1
+    B6a -.-> Loop_End_1
+    C2 -.-> Loop_End_1
+    J1 -.-> Loop_End_1
+

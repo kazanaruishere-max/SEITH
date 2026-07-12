@@ -2741,6 +2741,7 @@ dependencies = [
  "shared",
  "tokio",
  "tracing",
+ "us100",
  "xauusd",
 ]
 
@@ -3652,6 +3653,28 @@ name = "urlencoding"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
+
+[[package]]
+name = "us100"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dotenvy",
+ "env_logger",
+ "float-cmp",
+ "log",
+ "polars",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "shared",
+ "sqlx",
+ "statrs",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "usdcad"

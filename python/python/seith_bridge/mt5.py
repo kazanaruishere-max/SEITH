@@ -72,12 +72,12 @@ def get_rates_json(symbol: str, count: int = 100, timeframe: int = mt5.TIMEFRAME
     result = []
     for r in rates:
         result.append({
-            "time": int(r.time),
-            "open": r.open,
-            "high": r.high,
-            "low": r.low,
-            "close": r.close,
-            "volume": r.tick_volume,
+            "time": int(r['time']),
+            "open": float(r['open']),
+            "high": float(r['high']),
+            "low": float(r['low']),
+            "close": float(r['close']),
+            "volume": int(r['tick_volume']),
         })
     return json.dumps(result)
     """Get OHLCV rates"""

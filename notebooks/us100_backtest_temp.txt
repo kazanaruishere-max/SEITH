@@ -1,0 +1,525 @@
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+import warnings
+warnings.filterwarnings('ignore')
+
+END = datetime(2026, 7, 12)
+START = END - timedelta(days=365)
+START_STR = START.strftime('%Y-%m-%d')
+END_STR = END.strftime('%Y-%m-%d')
+print(f'Period: {START_STR} → {END_STR}')
+print(f'Total days: {(END - START).days}')
+
+# === 1. DATA FETCH ===
+print('Fetching QQQ 1h...')
+qqq = yf.download('QQQ', start=START_STR, end=END_STR, interval='1h', progress=False)
+print(f'  Rows: {len(qqq)}')
+print(f'  Columns: {list(qqq.columns)}')
+
+print('Fetching ^VIX daily...')
+vix = yf.download('^VIX', start=START_STR, end=END_STR, progress=False)
+vix_close = vix['Close'] if hasattr(vix, 'columns') and 'Close' in vix.columns else vix
+
+print('Fetching ^TNX (US10Y)...')
+tnx = yf.download('^TNX', start=START_STR, end=END_STR, progress=False)
+
+print('Fetching ^FVX (US02Y)...')
+fvx = yf.download('^FVX', start=START_STR, end=END_STR, progress=False)
+
+qqq.head(3)
+
+# === 2. RESAMPLE M15 DATA ===
+df = qqq.copy()
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.droplevel(1)
+
+df.index = pd.to_datetime(df.index, utc=True)
+df['date'] = df.index.date
+
+print(f'M15 bars: {len(df)}')
+print(f'Date range: {df.index.min()} → {df.index.max()}')
+print(f'Trading days: {df["date"].nunique()}')
+df.head(2)
+
+# === 3. US MARKET SESSION FILTER ===
+US_OPEN = pd.Timestamp('09:30').time()   # ET
+US_CLOSE = pd.Timestamp('16:00').time()  # ET
+
+OPEN_END = pd.Timestamp('10:00').time()
+LUNCH_START = pd.Timestamp('12:30').time()
+LUNCH_END = pd.Timestamp('14:00').time()
+POWER_HOUR = pd.Timestamp('15:30').time()  # last 30m
+GAP_THRESHOLD = 0.3  # percent
+
+def detect_phase(dt):
+    t = dt.time()
+    if t < OPEN_END:
+        return 'OPEN'
+    elif t < LUNCH_START:
+        return 'NORMAL'
+    elif t < LUNCH_END:
+        return 'LUNCH'
+    elif t < POWER_HOUR:
+        return 'NORMAL'
+    else:
+        return 'POWER_HOUR'
+
+df['phase'] = df.index.map(detect_phase)
+print('Phase distribution:')
+print(df['phase'].value_counts())
+
+# === 4. MACRO CALENDAR (FOMC/CPI/NFP dates) ===
+macro_dates = {
+    'FOMC': pd.to_datetime([
+        '2025-07-30', '2025-09-17', '2025-11-07', '2025-12-17',
+        '2026-01-28', '2026-03-18', '2026-05-06', '2026-06-17'
+    ]),
+    'CPI': pd.to_datetime([
+        '2025-08-13', '2025-09-11', '2025-10-15', '2025-11-13', '2025-12-11',
+        '2026-01-14', '2026-02-12', '2026-03-12', '2026-04-10', '2026-05-13', '2026-06-11'
+    ]),
+    'NFP': pd.to_datetime([
+        '2025-08-01', '2025-09-05', '2025-10-03', '2025-11-07', '2025-12-05',
+        '2026-01-09', '2026-02-06', '2026-03-06', '2026-04-03', '2026-05-08', '2026-06-05'
+    ]),
+}
+
+def check_macro(dt):
+    day = dt.normalize()
+    for event, dates in macro_dates.items():
+        for d in dates:
+            if abs((day - d).total_seconds()) < 7200:
+                return 'RED' if event in ['FOMC', 'CPI', 'NFP'] else 'RED'
+    return 'GREEN'
+
+df['macro'] = df.index.map(lambda x: check_macro(x))
+print(f'Macro RED bars: {(df["macro"]=="RED").sum()}')
+print(f'Macro GREEN bars: {(df["macro"]=="GREEN").sum()}')
+
+# === 5. INDICATORS ===
+HV_WINDOW = 20
+FRAMA_PERIOD = 14
+CVD_WINDOW = 20
+VWAP_BAND = 2.5
+
+prices = df['Close'].values
+highs = df['High'].values
+lows = df['Low'].values
+volumes = df['Volume'].values.astype(float)
+n = len(df)
+
+# === 5a. HV Z-Score ===
+def compute_hv_zscore(p, w):
+    ret = np.diff(p) / p[:-1]
+    z = np.zeros(len(p))
+    for i in range(w, len(ret)):
+        seg = ret[i-w:i]
+        if seg.std() < 1e-10:
+            z[i] = 0.0
+        else:
+            z[i] = (seg[-1] - seg.mean()) / seg.std()
+    return z
+
+hv_z = compute_hv_zscore(prices, HV_WINDOW)
+df['hv_z'] = hv_z
+
+# === 5b. FRAMA ===
+def compute_frama(p, period):
+    results = np.full(len(p), np.nan)
+    z_frama = np.full(len(p), np.nan)
+    for i in range(period, len(p)):
+        w = p[i-period:i+1]
+        half = period // 2
+        n1 = w[:half+1].min()
+        x1 = w[:half+1].max()
+        n2 = w[half:].min()
+        x2 = w[half:].max()
+        n3 = w.min()
+        x3 = w.max()
+        r1 = x1 - n1 if x1 != n1 else 0.001
+        r2 = x2 - n2 if x2 != n2 else 0.001
+        r3 = x3 - n3 if x3 != n3 else 0.001
+        if r3 < 1e-10 or (r1 + r2) < 1e-10:
+            d = 1.0
+        else:
+            d = np.log((r1 + r2) / r3) / np.log(2)
+        alpha = np.exp(-4.6 * (d - 1))
+        prev = results[i-1] if not np.isnan(results[i-1]) else p[0]
+        results[i] = alpha * p[i] + (1 - alpha) * prev
+        atr_val = max(abs(p[i] - p[i-1]), 0.01)
+        z_frama[i] = (p[i] - results[i]) / atr_val
+    return results, z_frama
+
+frama_vals, z_frama = compute_frama(prices, FRAMA_PERIOD)
+df['z_frama'] = z_frama
+
+# === 5c. OFS Proxy ===
+def compute_buy_ratio(h, l, c):
+    denom = h - l
+    if abs(denom) < 1e-10:
+        return 0.5
+    return (c - l) / denom
+
+buy_ratios = np.array([compute_buy_ratio(highs[i], lows[i], prices[i]) for i in range(n)])
+s_delta = 2.0 * (buy_ratios - 0.5)
+
+raw_delta = s_delta * volumes
+cvd = np.cumsum(raw_delta)
+
+cvd_norm = np.zeros(n)
+for i in range(CVD_WINDOW, n):
+    seg = cvd[i-CVD_WINDOW:i+1]
+    if seg.std() < 1e-10:
+        z = 0.0
+    else:
+        z = (seg[-1] - seg.mean()) / seg.std()
+    cvd_norm[i] = np.tanh(z / 3.0)
+
+df['s_delta'] = s_delta
+df['cvd_norm'] = cvd_norm
+
+# S_DOM from volume profile (simplified: high vol cluster = absorption)
+def compute_dom(prices, volumes, w=20):
+    scores = np.zeros(len(prices))
+    for i in range(w, len(prices)):
+        seg_p = prices[i-w:i]
+        seg_v = volumes[i-w:i]
+        if seg_v.sum() < 1e-10:
+            continue
+        poc_idx = seg_v.argmax()
+        poc_price = seg_p[poc_idx]
+        current_pos = (prices[i] - seg_p.min()) / (seg_p.max() - seg_p.min() + 1e-10)
+        imbalance = 0.5 - current_pos
+        scores[i] = np.clip(imbalance * 2, -1, 1)
+    return scores
+
+df['s_dom'] = compute_dom(prices, volumes)
+df['ofs_proxy'] = df['s_delta'] + df['cvd_norm'] + df['s_dom']
+
+print('Indicators computed.')
+print(f'  HV Z-Score range: {df["hv_z"].min():.2f} to {df["hv_z"].max():.2f}')
+print(f'  Z_FRAMA stats: mean={df["z_frama"].mean():.2f}, std={df["z_frama"].std():.2f}')
+print(f'  OFS proxy range: {df["ofs_proxy"].min():.2f} to {df["ofs_proxy"].max():.2f}')
+print(f'  S_Delta range: {df["s_delta"].min():.2f} to {df["s_delta"].max():.2f}')
+print(f'  CVD norm range: {df["cvd_norm"].min():.2f} to {df["cvd_norm"].max():.2f}')
+print(f'  S_DOM range: {df["s_dom"].min():.2f} to {df["s_dom"].max():.2f}')
+
+# === 5d. VWAP Bands ===
+def compute_vwap(p, v):
+    cum_vwap = np.full(len(p), np.nan)
+    upper = np.full(len(p), np.nan)
+    lower = np.full(len(p), np.nan)
+    cum_price_vol = 0.0
+    cum_vol = 0.0
+    for i in range(len(p)):
+        cum_price_vol += p[i] * v[i]
+        cum_vol += v[i]
+        if cum_vol > 0:
+            vwap = cum_price_vol / cum_vol
+            cum_vwap[i] = vwap
+            variance = np.mean((p[max(0,i-20):i+1] - vwap)**2)
+            std = np.sqrt(max(variance, 1e-10))
+            upper[i] = vwap + VWAP_BAND * std
+            lower[i] = vwap - VWAP_BAND * std
+    return cum_vwap, upper, lower
+
+df['vwap'], df['vwap_upper'], df['vwap_lower'] = compute_vwap(prices, volumes)
+df['vwap_overextended'] = (prices > df['vwap_upper'].values) | (prices < df['vwap_lower'].values)
+
+# === 5e. Yield (daily proxy) ===
+tnx_close = tnx['Close'].squeeze() if isinstance(tnx, pd.DataFrame) and 'Close' in tnx.columns else tnx
+fvx_close = fvx['Close'].squeeze() if isinstance(fvx, pd.DataFrame) and 'Close' in fvx.columns else fvx
+tnx_daily = tnx_close.reindex(df.index, method='ffill')
+fvx_daily = fvx_close.reindex(df.index, method='ffill')
+
+if len(tnx_daily) > 20:
+    tnx_z = (tnx_daily - tnx_daily.rolling(20).mean()) / tnx_daily.rolling(20).std()
+else:
+    tnx_z = pd.Series(0.0, index=df.index)
+tnx_z = tnx_z.fillna(0.0)
+df['yield_z'] = tnx_z.values
+df['curve_spread'] = (tnx_daily - fvx_daily).values
+
+print('VWAP + Yield computed.')
+
+# === 6. 5-GATE PIPELINE ===
+HV_SKIP_LOW = -1.0
+HV_PASS_LOW = -1.0
+HV_PASS_HIGH = 1.5
+HV_ELEVATED_HIGH = 2.0
+FRAMA_OVEREXT = 0.5
+OFS_NORMAL = 3.0
+OFS_POWER_HOUR = 2.0
+OFS_NOISE = 1.0
+YIELD_BEARISH = 1.5
+YIELD_BULLISH = -1.5
+
+results = []
+daily_counts = {}
+gate_blocks = {'G0_macro': 0, 'G1_hv': 0, 'G2_frama': 0, 'G3_ofs': 0, 'G4_vwap': 0}
+
+for idx in range(FRAMA_PERIOD + CVD_WINDOW + 10, n):
+    row = df.iloc[idx]
+    dt = df.index[idx]
+    day = dt.date()
+
+    # Skip days detection
+    if dt.weekday() >= 5:
+        continue
+
+    phase = row['phase']
+    if phase in ('OPEN', 'LUNCH'):
+        continue
+
+    if row['macro'] == 'RED':
+        gate_blocks['G0_macro'] += 1
+        continue
+
+    if day not in daily_counts:
+        daily_counts[day] = {'signal_count': 0, 'gate_blocks': {k:0 for k in gate_blocks}}
+
+    # G1: HV Z-Score
+    hv = row['hv_z']
+    if hv < HV_SKIP_LOW or hv > HV_ELEVATED_HIGH:
+        gate_blocks['G1_hv'] += 1
+        daily_counts[day]['gate_blocks']['G1_hv'] += 1
+        continue
+
+    # G2: FRAMA
+    zf = row['z_frama']
+    if np.isnan(zf) or zf > FRAMA_OVEREXT:
+        gate_blocks['G2_frama'] += 1
+        daily_counts[day]['gate_blocks']['G2_frama'] += 1
+        continue
+
+    # G3: OFS Proxy
+    ofs = row['ofs_proxy']
+    ofs_thresh = OFS_POWER_HOUR if phase == 'POWER_HOUR' else OFS_NORMAL
+    if abs(ofs) <= OFS_NOISE:
+        gate_blocks['G3_ofs'] += 1
+        daily_counts[day]['gate_blocks']['G3_ofs'] += 1
+        continue
+    if abs(ofs) < ofs_thresh:
+        gate_blocks['G3_ofs'] += 1
+        daily_counts[day]['gate_blocks']['G3_ofs'] += 1
+        continue
+
+    # G4: VWAP + Yield
+    if row['vwap_overextended']:
+        gate_blocks['G4_vwap'] += 1
+        daily_counts[day]['gate_blocks']['G4_vwap'] += 1
+        continue
+
+    # 5/5 → SIGNAL VALID
+    daily_counts[day]['signal_count'] += 1
+
+    direction = 'buy' if row['s_delta'] > 0 else 'sell'
+    price = row['Close']
+
+    # Simulate entry/exit
+    if phase == 'POWER_HOUR':
+        sl = row['Close'] - 8.0 if direction == 'buy' else row['Close'] + 8.0
+        tp = row['Close'] + 8.0 * 0.5 if direction == 'buy' else row['Close'] - 8.0 * 0.5
+        mode = 'SCALP'
+        risk_pct = 0.0050
+    else:
+        sl = row['Close'] - abs(row['Close'] * 0.005) if direction == 'buy' else row['Close'] + abs(row['Close'] * 0.005)
+        tp = row['Close'] + abs(row['Close'] * 0.0075) if direction == 'buy' else row['Close'] - abs(row['Close'] * 0.0075)
+        mode = 'SNIPER'
+        risk_pct = 0.0075
+
+    hv_level = 'elevated' if HV_PASS_HIGH < hv <= HV_ELEVATED_HIGH else 'normal'
+    conf_mult = 0.75 if hv_level == 'elevated' else 1.0
+
+    results.append({
+        'time': dt, 'phase': phase, 'mode': mode,
+        'direction': direction, 'entry': price,
+        'sl': sl, 'tp': tp,
+        'ofs': ofs, 'hv_z': hv, 'z_frama': zf,
+        'yield_z': row['yield_z'],
+        'confidence_mult': conf_mult,
+        'risk_pct': risk_pct,
+    })
+
+df_signals = pd.DataFrame(results)
+print(f'Total signals (5/5): {len(df_signals)}')
+print(f'  Sniper: {(df_signals["mode"]=="SNIPER").sum()}')
+print(f'  Scalp: {(df_signals["mode"]=="SCALP").sum()}')
+print(f'  Buy: {(df_signals["direction"]=="buy").sum()}')
+print(f'  Sell: {(df_signals["direction"]=="sell").sum()}')
+print()
+print('Gate blockage (total):')
+for g, c in sorted(gate_blocks.items(), key=lambda x: -x[1]):
+    print(f'  {g}: {c}')
+
+# === 7. SIGNAL EXIT SIMULATION ===
+def simulate_exit(signal, df):
+    idx = df.index.get_indexer([signal['time']], method='bfill')[0]
+    if idx < 0 or idx >= len(df):
+        return None
+    entry = signal['entry']
+    sl = signal['sl']
+    tp = signal['tp']
+    direction = signal['direction']
+    max_bars = 16  # 4 hours at M15
+
+    for j in range(1, min(max_bars, len(df) - idx)):
+        bar = df.iloc[idx + j]
+        h = bar['High']
+        l = bar['Low']
+        if direction == 'buy':
+            if h >= tp:
+                return {'exit': tp, 'pl': tp - entry, 'bars': j, 'win': True}
+            if l <= sl:
+                return {'exit': sl, 'pl': sl - entry, 'bars': j, 'win': False}
+        else:
+            if l <= tp:
+                return {'exit': tp, 'pl': entry - tp, 'bars': j, 'win': True}
+            if h >= sl:
+                return {'exit': sl, 'pl': entry - sl, 'bars': j, 'win': False}
+    return None
+
+exits = []
+for _, sig in df_signals.iterrows():
+    result = simulate_exit(sig, df)
+    if result:
+        exits.append(result)
+    else:
+        exits.append({'exit': None, 'pl': None, 'bars': None, 'win': None})
+
+df_signals['exit'] = [e['exit'] for e in exits]
+df_signals['pl_points'] = [e['pl'] for e in exits]
+df_signals['bars_held'] = [e['bars'] for e in exits]
+df_signals['win'] = [e['win'] for e in exits]
+
+completed = df_signals[df_signals['win'].notna()]
+wins = completed[completed['win'] == True]
+losses = completed[completed['win'] == False]
+
+total_pl_points = completed['pl_points'].sum()
+win_rate = len(wins) / len(completed) * 100 if len(completed) > 0 else 0
+gross_profit = wins['pl_points'].sum() if len(wins) > 0 else 0
+gross_loss = abs(losses['pl_points'].sum()) if len(losses) > 0 else 1
+profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+
+print(f'Completed trades: {len(completed)}')
+print(f'  Wins: {len(wins)}')
+print(f'  Losses: {len(losses)}')
+print(f'  Win Rate: {win_rate:.1f}%')
+print(f'  Profit Factor: {profit_factor:.2f}')
+print(f'  Total P&L (points): {total_pl_points:.2f}')
+print(f'  Avg Win: {wins["pl_points"].mean():.2f}')
+print(f'  Avg Loss: {losses["pl_points"].mean():.2f}')
+print(f'  Avg Bars Held: {completed["bars_held"].mean():.1f}')
+
+# === 8. DAILY ANALYSIS ===
+daily_stats = []
+for day, counts in sorted(daily_counts.items()):
+    day_signals = df_signals[df_signals['time'].dt.date == day]
+    day_completed = day_signals[day_signals['win'].notna()]
+    day_wins = day_completed[day_completed['win'] == True]
+    daily_stats.append({
+        'date': day,
+        'signals': counts['signal_count'],
+        'completed': len(day_completed),
+        'wins': len(day_wins),
+        'pl': day_completed['pl_points'].sum() if len(day_completed) > 0 else 0,
+    })
+
+df_daily = pd.DataFrame(daily_stats)
+print('Daily signal stats:')
+print(f'  Days with signals: {len(df_daily)}')
+print(f'  Avg signals/day: {df_daily["signals"].mean():.1f}')
+print(f'  Max signals/day: {df_daily["signals"].max()}')
+print(f'  Days with 0 signals: {(df_daily["signals"]==0).sum()}')
+print(f'  Days with ≥1 signal: {(df_daily["signals"]>=1).sum()}')
+print(f'  Days with ≥2 signals: {(df_daily["signals"]>=2).sum()}')
+print(f'  Days with ≥3 signals: {(df_daily["signals"]>=3).sum()}')
+
+# === 8a. GATE BREAKDOWN PER DAY ===
+gate_df = []
+for day, counts in sorted(daily_counts.items()):
+    row = {'date': day}
+    row.update(counts['gate_blocks'])
+    gate_df.append(row)
+
+df_gates = pd.DataFrame(gate_df)
+print('Daily gate blockage (avg):')
+print(df_gates[['G1_hv', 'G2_frama', 'G3_ofs', 'G4_vwap']].mean().to_string())
+print()
+print('Total block per gate:')
+print(df_gates[['G1_hv', 'G2_frama', 'G3_ofs', 'G4_vwap']].sum().to_string())
+
+# === 9. SCORE VS TARGET ===
+targets = {
+    'Win Rate >= 80%': (win_rate >= 80, win_rate),
+    'Profit Factor >= 4.0': (profit_factor >= 4.0, profit_factor),
+    'Consecutive Win >= 9': (False, None),
+    'Consecutive Loss <= 3': (False, None),
+}
+
+# Compute consecutive streaks
+win_arr = completed['win'].values
+max_cw = 0
+max_cl = 0
+cur_cw = 0
+cur_cl = 0
+for w in win_arr:
+    if w:
+        cur_cw += 1
+        cur_cl = 0
+        max_cw = max(max_cw, cur_cw)
+    else:
+        cur_cl += 1
+        cur_cw = 0
+        max_cl = max(max_cl, cur_cl)
+
+targets['Consecutive Win >= 9'] = (max_cw >= 9, max_cw)
+targets['Consecutive Loss <= 3'] = (max_cl <= 3, max_cl)
+
+print('=' * 45)
+print(f'  SCORECARD — US100 Backtest ({START_STR} → {END_STR})')
+print('=' * 45)
+passed = 0
+for name, (ok, val) in targets.items():
+    status = '✅' if ok else '❌'
+    if val is not None:
+        print(f'  {status} {name}: {val}')
+    else:
+        print(f'  {status} {name}')
+    if ok:
+        passed += 1
+print()
+print(f'  Target passed: {passed}/{len(targets)}')
+print('=' * 45)
+
+# === 10. MODE BREAKDOWN ===
+print('--- Mode Breakdown ---')
+for mode in ['SNIPER', 'SCALP']:
+    subset = completed[completed['mode'] == mode]
+    if len(subset) == 0:
+        continue
+    w = subset[subset['win'] == True]
+    wr = len(w) / len(subset) * 100
+    print(f'{mode}: {len(subset)} trades, WR={wr:.1f}%, '
+          f'avg_pl={subset["pl_points"].mean():.2f}, avg_bars={subset["bars_held"].mean():.1f}')
+
+# === 11. SUMMARY ===
+print('=' * 50)
+print(f'  BACKTEST SUMMARY — US100')
+print(f'  Period: {START_STR} → {END_STR} ({(END-START).days} days)')
+print(f'  Timeframe: 15-minute')
+print('=' * 50)
+print(f'  Total M15 bars: {n}')
+print(f'  Trading days: {len(daily_counts)}')
+print(f'  Total signals (5/5): {len(df_signals)}')
+print(f'  Completed trades: {len(completed)}')
+print(f'  Win Rate: {win_rate:.1f}%')
+print(f'  Profit Factor: {profit_factor:.2f}')
+print(f'  Avg signals/day: {df_daily["signals"].mean():.1f}')
+print(f'  Max consecutive win: {max_cw}')
+print(f'  Max consecutive loss: {max_cl}')
+print(f'  Total P&L: {total_pl_points:.2f} points')
+print('=' * 50)
